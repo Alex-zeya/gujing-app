@@ -5073,8 +5073,21 @@ function WatchView({
                 {dataStatus.sourceCapabilities.slice(0, 4).map((source) => (
                   <div key={source.id}>
                     <span>{source.name}</span>
-                    <strong>{source.status}</strong>
+                    <strong>
+                      {source.status === 'live'
+                        ? '已接入'
+                        : source.status === 'token-ready'
+                          ? '可用'
+                          : source.status === 'fallback'
+                            ? '备用'
+                            : source.status === 'free-cache'
+                              ? '免费缓存'
+                              : source.status === 'waiting'
+                                ? '等待补齐'
+                                : source.status}
+                    </strong>
                     <p>{source.text}</p>
+                    {source.refresh && <em>{source.refresh}</em>}
                   </div>
                 ))}
               </div>
