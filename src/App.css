@@ -2894,10 +2894,18 @@
 }
 
 .mini-risk {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 76px;
+  min-height: 36px;
+  box-sizing: border-box;
+  padding: 7px 14px;
   color: var(--success);
   border-color: oklch(0.82 0.06 152);
   background: oklch(0.96 0.025 152);
+  line-height: 1.2;
+  text-align: center;
 }
 
 .mini-risk.tone-warning {
