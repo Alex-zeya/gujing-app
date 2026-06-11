@@ -4,7 +4,7 @@
 
 ## 测试范围
 
-- 后端单元测试：持仓、交易流水、组合风险、数据状态、搜索。
+- 后端单元测试：持仓、交易流水、组合风险、行情波动雷达、新闻缓存、数据状态、搜索。
 - 前端构建：React/Vite production build。
 - iOS 同步：Capacitor web assets 同步到 Xcode 工程。
 - 浏览器冒烟测试：登录页、验证码登录、首页、找股票、持仓、观察池、我的、隐私政策入口。
@@ -53,12 +53,12 @@
 本文件会在每次发布前更新。本次执行结果：
 
 - `plutil -lint ios/App/App/Info.plist ios/App/App/PrivacyInfo.xcprivacy`：通过
-- `npm run backend:test`：通过，31 个测试
+- `npm run backend:test`：通过，32 个测试
 - `npm run lint`：通过
 - `npm run build`：通过
 - `npm run ios:sync`：通过
 - `npm run test:e2e`：通过，覆盖登录、中文搜索、加入持仓、持仓页、观察池、我的页运行监控和隐私政策页
-- API 冒烟：通过，覆盖健康检查、短信登录、中文搜索、股票详情、K 线、观察池、持仓买入/卖出、用户数据导出
+- API 冒烟：通过，覆盖健康检查、短信登录、中文搜索、股票详情、K 线、波动雷达、观察池、持仓买入/卖出、用户数据导出
 - 前端服务冒烟：通过，首页和隐私政策页均可访问
 
 后续发布前建议执行：

@@ -880,6 +880,7 @@ function App() {
   const [stockCatalog, setStockCatalog] = useState(stocks)
   const stockCatalogRef = useRef(stocks)
   const [recommendedStocks, setRecommendedStocks] = useState([])
+  const [volatilityRadar, setVolatilityRadar] = useState(null)
   const [dismissedRecommendationCodes, setDismissedRecommendationCodes] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('gujing-dismissed-recommendations') || '[]')
@@ -1008,10 +1009,11 @@ function App() {
           if (authData.token) localStorage.setItem(AUTH_TOKEN_KEY, authData.token)
         }
 
-        const [stockList, overview, recommendations, watchItems, portfolioSnapshot, insights, alertSettings, alertFeed, providerStatus, taskData, userData, readiness, monitor] = await Promise.all([
+        const [stockList, overview, recommendations, radar, watchItems, portfolioSnapshot, insights, alertSettings, alertFeed, providerStatus, taskData, userData, readiness, monitor] = await Promise.all([
           apiJson('/api/stocks'),
           apiJson('/api/market/overview'),
           apiJson('/api/recommendations/today'),
+          apiJson('/api/market/volatility-radar'),
           apiJson('/api/watchlist'),
           apiJson('/api/portfolio'),
           apiJson('/api/portfolio/insights'),
@@ -1030,9 +1032,10 @@ function App() {
             ...searchSeedStocks,
             ...current,
           },
-          [...stockList, ...recommendations],
+          [...stockList, ...recommendations, ...(radar?.items ?? [])],
         ))
         setRecommendedStocks(recommendations)
+        setVolatilityRadar(radar)
         setMarketOverview(overview)
         setWatchlist(watchItems.map((stock) => stock.code))
         setPortfolio(portfolioSnapshotToItems(portfolioSnapshot))
@@ -1070,9 +1073,10 @@ function App() {
 
     async function refreshMarketModules() {
       try {
-        const [overview, recommendations, alertFeed, providerStatus, taskData, readiness, monitor] = await Promise.all([
+        const [overview, recommendations, radar, alertFeed, providerStatus, taskData, readiness, monitor] = await Promise.all([
           apiJson('/api/market/overview'),
           apiJson('/api/recommendations/today'),
+          apiJson('/api/market/volatility-radar'),
           apiJson('/api/alerts/events'),
           apiJson('/api/data/status'),
           apiJson('/api/tasks/status'),
@@ -1081,7 +1085,8 @@ function App() {
         ])
         setMarketOverview(overview)
         setRecommendedStocks(recommendations)
-        setStockCatalog((current) => mergeStockCatalog(current, recommendations))
+        setVolatilityRadar(radar)
+        setStockCatalog((current) => mergeStockCatalog(current, [...recommendations, ...(radar?.items ?? [])]))
         setAlertEvents(alertFeed.events ?? [])
         setAlertUnreadCount(alertFeed.unreadCount ?? 0)
         setAlertMonitorStatus(alertFeed.status ?? null)
@@ -1778,10 +1783,11 @@ function App() {
         method: 'POST',
         body: JSON.stringify({ codes: marketStocks.map((stock) => stock.code) }),
       })
-      const [stockList, overview, recommendations, portfolioSnapshot, insights, alertFeed, providerStatus, taskData, userData, readiness, monitor] = await Promise.all([
+      const [stockList, overview, recommendations, radar, portfolioSnapshot, insights, alertFeed, providerStatus, taskData, userData, readiness, monitor] = await Promise.all([
         apiJson('/api/stocks'),
         apiJson('/api/market/overview'),
         apiJson('/api/recommendations/today'),
+        apiJson('/api/market/volatility-radar?refresh_news=true'),
         apiJson('/api/portfolio'),
         apiJson('/api/portfolio/insights'),
         apiJson('/api/alerts/events'),
@@ -1796,9 +1802,10 @@ function App() {
           ...searchSeedStocks,
           ...current,
         },
-        [...stockList, ...recommendations],
+        [...stockList, ...recommendations, ...(radar?.items ?? [])],
       ))
       setRecommendedStocks(recommendations)
+      setVolatilityRadar(radar)
       setMarketOverview(overview)
       setPortfolio(portfolioSnapshotToItems(portfolioSnapshot))
       setPortfolioInsights(insights)
@@ -1924,6 +1931,7 @@ function App() {
           <HomeView
             marketStocks={marketStocks}
             recommendedStocks={recommendedStocks}
+            volatilityRadar={volatilityRadar}
             dismissedRecommendationCodes={dismissedRecommendationCodes}
             marketOverview={marketOverview}
             watchlist={watchlist}
@@ -2121,6 +2129,7 @@ function LoginScreen({
 function HomeView({
   marketStocks,
   recommendedStocks,
+  volatilityRadar,
   dismissedRecommendationCodes,
   marketOverview,
   watchlist,
@@ -2215,8 +2224,67 @@ function HomeView({
         </p>
       </article>
 
+      <VolatilityRadarCard
+        radar={volatilityRadar}
+        stocksByCode={{ ...stocks, ...Object.fromEntries(marketStocks.map((stock) => [stock.code, stock])) }}
+        onAnalyze={analyzeRecommendation}
+      />
+
       <RiskNotice />
     </div>
+  )
+}
+
+function VolatilityRadarCard({ radar, stocksByCode, onAnalyze }) {
+  const items = radar?.items ?? []
+  if (!items.length) return null
+  return (
+    <section className="panel volatility-radar-card">
+      <div className="section-title split">
+        <div>
+          <AlertTriangle size={18} />
+          <h2>波动雷达</h2>
+        </div>
+        <span>{radar.refreshIntervalMinutes ?? 15} 分钟更新</span>
+      </div>
+      <p className="volatility-radar-summary">{radar.summary}</p>
+      <div className="volatility-radar-list">
+        {items.slice(0, 5).map((item) => {
+          const stock = stocksByCode[item.code] ?? {
+            ...item,
+            market: 'cn',
+            performance: {
+              day: item.signals?.dayMove ?? 0,
+              week: item.signals?.weekMove ?? 0,
+              month: item.signals?.monthMove ?? 0,
+            },
+            tags: [item.industry],
+            score: item.score,
+            tone: item.direction === 'down' ? 'warning' : 'neutral',
+            pulse: item.reasons?.[0] ?? '波动雷达提示需要继续观察。',
+            chart: [1, 1],
+            sparkline: [1, 1],
+          }
+          return (
+            <button key={item.code} type="button" onClick={() => onAnalyze(stock)}>
+              <div className="volatility-radar-rank">
+                <strong>{item.score}</strong>
+                <span>{item.level}</span>
+              </div>
+              <div>
+                <b>{item.name}</b>
+                <em>{item.code} · {item.industry}</em>
+                <p>{item.reasons?.[0] ?? '行情和新闻缓存提示需要观察。'}</p>
+              </div>
+              <i className={item.direction === 'down' ? 'is-down' : item.direction === 'up' ? 'is-up' : ''}>
+                {formatPercent(item.signals?.dayMove ?? 0)}
+              </i>
+            </button>
+          )
+        })}
+      </div>
+      <small>{radar.dataNote}</small>
+    </section>
   )
 }
 

@@ -742,6 +742,119 @@
   line-height: 1.45;
 }
 
+.volatility-radar-card {
+  display: grid;
+  gap: 12px;
+}
+
+.volatility-radar-card .section-title > span {
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: oklch(0.96 0.018 255);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.volatility-radar-summary {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 760;
+  line-height: 1.5;
+}
+
+.volatility-radar-list {
+  display: grid;
+  gap: 8px;
+}
+
+.volatility-radar-list button {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  background: var(--surface);
+  color: inherit;
+  text-align: left;
+}
+
+.volatility-radar-list button:active {
+  transform: translateY(1px);
+}
+
+.volatility-radar-rank {
+  display: grid;
+  place-items: center;
+  min-height: 54px;
+  border-radius: 10px;
+  background: var(--ink);
+  color: white;
+}
+
+.volatility-radar-rank strong {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.volatility-radar-rank span {
+  margin-top: 4px;
+  color: oklch(0.86 0.025 255);
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.volatility-radar-list b {
+  display: block;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 930;
+}
+
+.volatility-radar-list em {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 760;
+}
+
+.volatility-radar-list p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1.35;
+}
+
+.volatility-radar-list i {
+  color: var(--muted);
+  font-size: 15px;
+  font-style: normal;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.volatility-radar-list i.is-up {
+  color: var(--market-up);
+}
+
+.volatility-radar-list i.is-down {
+  color: var(--market-down);
+}
+
+.volatility-radar-card small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 720;
+  line-height: 1.45;
+}
+
 .compact-details {
   display: grid;
   gap: 10px;

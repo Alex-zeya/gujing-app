@@ -604,6 +604,45 @@ class PortfolioFlowTest(unittest.TestCase):
         self.assertEqual(cached["cache"]["mode"], "cached")
         self.assertTrue(cached["items"])
 
+    def test_volatility_radar_combines_market_news_and_user_context(self):
+        self.backend.portfolio_upsert(
+            self.backend.PortfolioPayload(
+                code="000001",
+                amount=3000,
+                costPrice=10,
+                note="radar test holding",
+            )
+        )
+        with self.backend.connect() as db:
+            db.execute(
+                """
+                INSERT INTO news_cache (code, payload, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(code) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at
+                """,
+                (
+                    "000001",
+                    self.backend.to_json({
+                        "stance": "消息面偏谨慎",
+                        "items": [{"title": "平安银行 风险提示公告", "tone": "down", "category": "利空"}],
+                        "counts": {"positive": 0, "negative": 1, "watch": 0},
+                        "updated": self.backend.now_text(),
+                        "errors": [],
+                    }),
+                ),
+            )
+
+        radar = self.backend.volatility_radar_payload(limit=5)
+
+        self.assertEqual(radar["modelVersion"], "volatility-radar-v1")
+        self.assertTrue(radar["items"])
+        holding_item = next((item for item in radar["items"] if item["code"] == "000001"), None)
+        self.assertIsNotNone(holding_item)
+        self.assertTrue(holding_item["held"])
+        self.assertIn("signals", holding_item)
+        self.assertIn("reasons", holding_item)
+        self.assertIn("波动雷达", radar["dataNote"])
+
     def test_stock_forecast_outputs_probabilities(self):
         stock = self.backend.apply_analysis_score(self.backend.get_stock_or_404("000001"))
         analysis = stock["analysisScore"]

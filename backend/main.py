@@ -4354,6 +4354,157 @@ def build_alert_events() -> list[dict[str, Any]]:
     return sorted(events, key=lambda item: severity_order.get(item["severity"], 9))[:20]
 
 
+def news_volatility_signal(news_impact: dict[str, Any] | None) -> tuple[int, str, str]:
+    impact = news_impact or {}
+    counts = impact.get("counts") or {}
+    items = impact.get("items") or []
+    positive = int(counts.get("positive") or 0)
+    negative = int(counts.get("negative") or 0)
+    watch = int(counts.get("watch") or 0)
+    latest = items[0] if items else {}
+    title = str(latest.get("title") or "")
+    category = str(latest.get("category") or "")
+    if negative:
+        return min(22, 10 + negative * 6 + watch * 2), "消息偏谨慎", title or "有利空或风险类消息，需要确认影响范围。"
+    if positive:
+        return min(18, 8 + positive * 5 + watch * 2), "消息偏积极", title or "有利好类消息，可能提升短期关注度。"
+    if watch or items:
+        return min(10, 4 + watch * 2), category or "消息待观察", title or "有公司事件或公告类信息，影响方向需要继续跟踪。"
+    return 0, "暂无新闻触发", "暂未读取到明显新闻或公告触发。"
+
+
+def stock_volatility_radar_item(
+    stock: dict[str, Any],
+    *,
+    watched: bool = False,
+    holding: dict[str, Any] | None = None,
+    include_cached_news: bool = True,
+) -> dict[str, Any]:
+    enriched = apply_snapshot_history(stock)
+    performance = enriched.get("performance") or {}
+    day_move = float(performance.get("day") or 0)
+    week_move = float(performance.get("week") or 0)
+    month_move = float(performance.get("month") or 0)
+    closes = history_closes(enriched)
+    annual_volatility = annualized_volatility_percent(closes)
+    drawdown = max_drawdown_percent(closes)
+    quote_stats = enriched.get("quoteStats") or {}
+    volume_ratio = number_or_none(quote_stats.get("volumeRatio"))
+    turnover = number_or_none(quote_stats.get("turnoverRate"))
+    news_impact = enriched.get("newsImpact")
+    if include_cached_news and not news_impact:
+        with suppress(Exception):
+            news_impact = cached_stock_news_impact(enriched["code"], limit=3, max_age_minutes=NEWS_CACHE_MINUTES)
+            enriched["newsImpact"] = news_impact
+
+    news_score, news_label, news_reason = news_volatility_signal(news_impact)
+    price_score = min(35, abs(day_move) * 4.5 + abs(week_move) * 1.4 + abs(month_move) * 0.45)
+    kline_score = min(24, annual_volatility * 0.35 + drawdown * 0.45)
+    volume_score = 0
+    if volume_ratio is not None:
+        volume_score += min(12, max(0, volume_ratio - 1) * 6)
+    if turnover is not None:
+        volume_score += min(8, turnover * 0.8)
+    user_score = (8 if watched else 0) + (10 if holding else 0)
+    score = clamp_score(30 + price_score + kline_score + volume_score + news_score + user_score)
+    direction = "up" if day_move >= 0 and week_move >= 0 else "down" if day_move < 0 and week_move < 0 else "mixed"
+    if score >= 82:
+        level = "高波动"
+    elif score >= 66:
+        level = "中高波动"
+    elif score >= 50:
+        level = "需要观察"
+    else:
+        level = "正常跟踪"
+    reasons = []
+    if abs(day_move) >= 3:
+        reasons.append(f"今日涨跌 {format_change(day_move)}，短线情绪已经放大。")
+    elif abs(week_move) >= 5:
+        reasons.append(f"近一周涨跌 {format_change(week_move)}，趋势波动正在累积。")
+    if annual_volatility >= 35:
+        reasons.append(f"历史年化波动约 {annual_volatility:.1f}%，价格弹性较高。")
+    if volume_score >= 8:
+        reasons.append("成交或换手信号放大，说明资金关注度变化。")
+    if news_score > 0:
+        reasons.append(news_reason)
+    if holding:
+        reasons.append(f"这只股票在你的持仓中占比 {float(holding.get('positionRatio') or 0):.1f}%，波动会影响组合体验。")
+    if not reasons:
+        reasons.append("当前没有极端触发，但仍会随行情和新闻缓存继续跟踪。")
+    return {
+        "code": enriched["code"],
+        "name": enriched["name"],
+        "industry": portfolio_category_label(enriched.get("industry"), enriched),
+        "price": enriched.get("price"),
+        "change": enriched.get("change"),
+        "score": score,
+        "level": level,
+        "direction": direction,
+        "watched": watched,
+        "held": bool(holding),
+        "positionRatio": round(float((holding or {}).get("positionRatio") or 0), 2),
+        "signals": {
+            "dayMove": round(day_move, 2),
+            "weekMove": round(week_move, 2),
+            "monthMove": round(month_move, 2),
+            "annualVolatility": round(annual_volatility, 2),
+            "maxDrawdown": round(drawdown, 2),
+            "volumeRatio": volume_ratio,
+            "turnoverRate": turnover,
+            "news": news_label,
+        },
+        "reasons": reasons[:4],
+        "nextWatch": [
+            "先看下一次放量方向，不要只因单日涨跌追涨杀跌。",
+            "若同时出现公告、放量和突破/跌破关键位，再提高处理优先级。",
+        ],
+        "updatedAt": now_text(),
+    }
+
+
+def volatility_radar_payload(limit: int = 10, refresh_news: bool = False) -> dict[str, Any]:
+    owner_id = current_user_id()
+    portfolio = portfolio_snapshot(owner_id, refresh_quotes=False)
+    holding_map = {item["code"]: item for item in portfolio.get("items", [])}
+    watch_codes = {stock["code"] for stock in watchlist_index()}
+    all_stocks = [
+        stock for stock in list_stocks()
+        if stock.get("market") == "cn" and stock_price_number(stock) > 0
+    ]
+    priority_codes = set(holding_map) | watch_codes
+    priority = [stock for stock in all_stocks if stock["code"] in priority_codes]
+    market_candidates = sorted(
+        [stock for stock in all_stocks if stock["code"] not in priority_codes],
+        key=lambda item: abs(float((item.get("performance") or {}).get("day") or 0)) + abs(float((item.get("performance") or {}).get("week") or 0)) * 0.35,
+        reverse=True,
+    )[: max(limit * 3, 20)]
+    items = [
+        stock_volatility_radar_item(
+            stock,
+            watched=stock["code"] in watch_codes,
+            holding=holding_map.get(stock["code"]),
+            include_cached_news=refresh_news or stock["code"] in priority_codes,
+        )
+        for stock in [*priority, *market_candidates]
+    ]
+    ranked = sorted(items, key=lambda item: item["score"], reverse=True)[:limit]
+    high_count = sum(1 for item in ranked if item["score"] >= 82)
+    watched_count = sum(1 for item in ranked if item["watched"] or item["held"])
+    summary = (
+        f"当前雷达发现 {len(ranked)} 只需要跟踪的股票，其中 {high_count} 只为高波动，"
+        f"{watched_count} 只来自你的持仓或观察池。"
+    )
+    return {
+        "userId": owner_id,
+        "modelVersion": "volatility-radar-v1",
+        "updatedAt": now_text(),
+        "refreshIntervalMinutes": ALERT_CHECK_INTERVAL_MINUTES,
+        "summary": summary,
+        "items": ranked,
+        "dataNote": "波动雷达综合行情、K线、成交和新闻缓存做风险提示，不构成买卖建议。",
+    }
+
+
 def stock_sector_names(stock: dict[str, Any]) -> list[str]:
     text = " ".join(
         [
@@ -6067,6 +6218,11 @@ def market_overview() -> dict[str, Any]:
 @app.get("/api/recommendations/today")
 def today_recommendations() -> list[dict[str, Any]]:
     return today_recommendation_payload()
+
+
+@app.get("/api/market/volatility-radar")
+def market_volatility_radar(limit: int = 10, refresh_news: bool = False) -> dict[str, Any]:
+    return volatility_radar_payload(limit=limit, refresh_news=refresh_news)
 
 
 @app.post("/api/recommendations/feedback", status_code=201)

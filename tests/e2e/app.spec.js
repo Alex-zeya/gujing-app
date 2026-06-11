@@ -18,6 +18,7 @@ test.describe('股镜核心用户流程', () => {
     })
 
     await login(page)
+    await expect(page.getByRole('heading', { name: '波动雷达' })).toBeVisible()
 
     await page.getByRole('button', { name: '找股票' }).click()
     await expect(page.getByText('查一只股票')).toBeVisible()
