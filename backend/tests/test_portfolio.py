@@ -127,7 +127,11 @@ class PortfolioFlowTest(unittest.TestCase):
         self.assertEqual(summary["totalBuyAmount"], 1000)
         self.assertEqual(summary["totalSellAmount"], 480)
         self.assertEqual(summary["realizedGain"], 80)
+        self.assertEqual(summary["realizedGainRate"], 20)
         self.assertEqual(summary["holdingCost"], 600)
+        self.assertEqual(summary["recoveredPrincipal"], 400)
+        self.assertEqual(summary["withdrawableCash"], 400)
+        self.assertIn("移动平均成本", summary["method"])
         self.assertEqual(summary["sellCount"], 1)
 
     def test_portfolio_holding_includes_personalized_action(self):

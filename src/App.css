@@ -1887,6 +1887,65 @@
   font-weight: 850;
 }
 
+.capital-ledger-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+  gap: 10px;
+  align-items: stretch;
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--ink);
+  color: white;
+}
+
+.capital-ledger-hero > div {
+  display: grid;
+  align-content: center;
+  gap: 3px;
+}
+
+.capital-ledger-hero span,
+.capital-ledger-hero p,
+.capital-ledger-hero em {
+  color: oklch(0.88 0.025 255);
+}
+
+.capital-ledger-hero span {
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.capital-ledger-hero strong {
+  color: white;
+  font-size: 28px;
+  font-weight: 950;
+  line-height: 1.05;
+}
+
+.capital-ledger-hero strong.is-up,
+.capital-ledger-hero .is-up {
+  color: var(--market-up);
+}
+
+.capital-ledger-hero strong.is-down,
+.capital-ledger-hero .is-down {
+  color: var(--market-down);
+}
+
+.capital-ledger-hero em {
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.capital-ledger-hero p {
+  margin: 0;
+  align-self: center;
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 1.45;
+}
+
 .capital-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1917,6 +1976,15 @@
   line-height: 1.1;
 }
 
+.capital-grid em {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 850;
+}
+
 .capital-ledger p {
   margin: 0;
   color: var(--muted);
@@ -1925,16 +1993,27 @@
   line-height: 1.45;
 }
 
-.capital-flow {
+.capital-tips {
   display: grid;
   gap: 7px;
 }
 
+.capital-tips p {
+  border-left: 3px solid oklch(0.55 0.13 255 / 0.35);
+  border-radius: 9px;
+  padding: 8px 9px;
+  background: oklch(0.98 0.01 255);
+}
+
+.capital-flow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
 .capital-flow div {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  align-items: center;
+  display: grid;
+  gap: 4px;
   border-radius: 10px;
   padding: 9px 10px;
   background: var(--bg);
@@ -1950,7 +2029,6 @@
   color: var(--ink);
   font-size: 13px;
   font-weight: 920;
-  text-align: right;
 }
 
 .capital-foot {
@@ -1975,6 +2053,32 @@
   font-size: 11px;
   font-style: normal;
   font-weight: 760;
+}
+
+.capital-method {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+}
+
+.capital-method summary {
+  display: flex;
+  min-height: 42px;
+  padding: 0 10px;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 900;
+  list-style: none;
+}
+
+.capital-method summary::-webkit-details-marker {
+  display: none;
+}
+
+.capital-method p {
+  padding: 0 10px 10px;
 }
 
 .portfolio-risk-engine,

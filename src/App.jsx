@@ -809,6 +809,36 @@ function buildPortfolioAdvice(portfolio, concentration, portfolioDayGain) {
   return advice
 }
 
+function buildCapitalTips(capital, portfolio) {
+  const tips = []
+  const holdingCost = Number(capital.holdingCost ?? 0)
+  const marketValue = Number(capital.marketValue ?? 0)
+  const unrealizedGain = Number(capital.unrealizedGain ?? 0)
+  const realizedGain = Number(capital.realizedGain ?? 0)
+  const totalBuyAmount = Number(capital.totalBuyAmount ?? 0)
+  const totalSellAmount = Number(capital.totalSellAmount ?? 0)
+  const topLoss = [...portfolio].sort((a, b) => (a.totalGainRate ?? 0) - (b.totalGainRate ?? 0))[0]
+
+  if (!portfolio.length) {
+    return ['先添加一只持仓，系统会自动拆分本金、浮盈和已卖出收益。']
+  }
+  if (holdingCost > 0) {
+    tips.push(`当前还有 ${currency(holdingCost)} 本金在持仓里，对应市值 ${currency(marketValue)}。`)
+  }
+  if (totalSellAmount > 0) {
+    tips.push(`已经卖出回收 ${currency(totalSellAmount)}，其中已实现收益 ${currency(realizedGain)}。`)
+  }
+  if (unrealizedGain < 0 && topLoss) {
+    tips.push(`${topLoss.name} 是当前拖累较明显的持仓，先复盘买入理由和仓位。`)
+  } else if (unrealizedGain > 0) {
+    tips.push(`当前浮动盈利 ${currency(unrealizedGain)}，可以开始设置止盈或减仓观察线。`)
+  }
+  if (totalBuyAmount > 0 && totalSellAmount === 0) {
+    tips.push('目前只有买入记录，还没有卖出记录，已实现收益会在减仓后开始计算。')
+  }
+  return tips.slice(0, 3)
+}
+
 function getStoredWatchlist() {
   try {
     const stored = localStorage.getItem('gujing-watchlist')
@@ -3496,7 +3526,12 @@ function PortfolioView({
   const ledgerRealizedGain = capital.realizedGain ?? 0
   const ledgerTotalGain = capital.totalGain ?? totalGain
   const ledgerTotalGainRate = capital.totalGainRate ?? totalGainRate
+  const ledgerPortfolioReturnRate = capital.portfolioReturnRate ?? ledgerTotalGainRate
+  const ledgerRealizedGainRate = capital.realizedGainRate ?? 0
   const ledgerDayGain = capital.dayGain ?? portfolioDayGain
+  const netCashInvested = capital.netCashInvested ?? ledgerHoldingCost
+  const recoveredPrincipal = capital.recoveredPrincipal ?? 0
+  const capitalTips = buildCapitalTips(capital, portfolio)
   const cashMultiple = capital.marketToCostRatio ?? (ledgerHoldingCost ? ledgerMarketValue / ledgerHoldingCost : 0)
   const healthScore = Math.max(42, 92 - concentration.ratio + Math.round(portfolioDayGain / 1000))
   const portfolioAdvice = buildPortfolioAdvice(portfolio, concentration, portfolioDayGain)
@@ -3613,9 +3648,22 @@ function PortfolioView({
         <div className="section-title split">
           <div>
             <BriefcaseBusiness size={18} />
-            <h2>本金与交易</h2>
+            <h2>本金收益</h2>
           </div>
-          <span>{portfolio.length} 只持仓</span>
+          <span>{capital.transactionCount ? `${capital.transactionCount} 笔流水` : `${portfolio.length} 只持仓`}</span>
+        </div>
+        <div className="capital-ledger-hero">
+          <div>
+            <span>总收益</span>
+            <strong className={ledgerTotalGain >= 0 ? 'is-up' : 'is-down'}>
+              {currency(ledgerTotalGain)}
+            </strong>
+            <em>{formatPercent(ledgerPortfolioReturnRate)}</em>
+          </div>
+          <p>
+            未实现收益 {currency(ledgerUnrealizedGain)}，已实现收益 {currency(ledgerRealizedGain)}。
+            系统按平均成本估算，不连接真实券商账户。
+          </p>
         </div>
         <div className="capital-grid">
           <div>
@@ -3637,11 +3685,14 @@ function PortfolioView({
             <strong className={ledgerRealizedGain >= 0 ? 'is-up' : 'is-down'}>
               {currency(ledgerRealizedGain)}
             </strong>
+            <em>{formatPercent(ledgerRealizedGainRate)}</em>
           </div>
         </div>
-        <p>
-          买入会增加持仓本金；卖出会按平均成本释放本金，并单独计算已实现收益。
-        </p>
+        <div className="capital-tips">
+          {capitalTips.map((tip) => (
+            <p key={tip}>{tip}</p>
+          ))}
+        </div>
         <div className="capital-flow">
           <div>
             <span>累计买入</span>
@@ -3652,10 +3703,12 @@ function PortfolioView({
             <strong>{currency(capital.totalSellAmount ?? 0)}</strong>
           </div>
           <div>
-            <span>总收益</span>
-            <strong className={ledgerTotalGain >= 0 ? 'is-up' : 'is-down'}>
-              {currency(ledgerTotalGain)} / {formatPercent(ledgerTotalGainRate)}
-            </strong>
+            <span>净投入</span>
+            <strong>{currency(netCashInvested)}</strong>
+          </div>
+          <div>
+            <span>已释放本金</span>
+            <strong>{currency(recoveredPrincipal)}</strong>
           </div>
         </div>
         <div className="capital-foot">
@@ -3665,6 +3718,13 @@ function PortfolioView({
           </strong>
           <em>市值/本金 {cashMultiple ? cashMultiple.toFixed(2) : '0.00'}x</em>
         </div>
+        <details className="capital-method">
+          <summary>
+            <span>收益怎么计算</span>
+            <ChevronRight size={16} />
+          </summary>
+          <p>{capital.method ?? '买入增加持仓本金；卖出按平均成本释放本金，卖出金额减释放成本为已实现收益。'}</p>
+        </details>
       </section>
 
       <section className="panel portfolio-insight-card">

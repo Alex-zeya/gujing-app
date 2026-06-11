@@ -34,7 +34,7 @@ test.describe('股镜核心用户流程', () => {
     await expect(page.getByRole('dialog')).toBeHidden()
 
     await page.getByRole('button', { name: '持仓', exact: true }).click()
-    await expect(page.getByText('本金与交易')).toBeVisible()
+    await expect(page.getByText('本金收益')).toBeVisible()
     await expect(page.getByText('组合风险评分', { exact: true })).toBeVisible()
 
     await page.getByRole('button', { name: '观察', exact: true }).click()
