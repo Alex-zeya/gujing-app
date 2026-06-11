@@ -439,24 +439,24 @@ function createSearchSeedStock(stock, index = 0) {
     sparkline: stock.sparkline ?? [42, 42, 43, 42, 44, 43, 45, 44, 45, 46],
     chart: stock.chart ?? [base, base, base, base, base, base, base, base, base, base],
     tone: stock.tone ?? 'neutral',
-    pulse: stock.pulse ?? '已匹配企业名称，点击后会补充行情和K线。',
-    updated: stock.updated ?? '等待行情',
+    pulse: stock.pulse ?? '已匹配企业名称，点开后会优先同步行情，再补走势样本。',
+    updated: stock.updated ?? '行情同步中',
     score: stock.score ?? 58,
     tags: stock.tags ?? [stock.industry, '名称匹配'],
     idea: stock.idea ?? {
       stance: '先观察',
       horizon: '短中期',
-      reason: '已从股票名称目录匹配，等待行情和历史走势补充。',
-      risk: '当前数据未完整同步，先不要只凭名称判断持仓。',
-      trigger: '行情同步后再查看趋势、价格和系统建议。',
+      reason: '已从股票名称目录匹配，先确认实时价格和走势样本。',
+      risk: '当前只有目录信息，先不要只凭名称判断持仓。',
+      trigger: '行情同步完成后再查看趋势、价格和系统建议。',
     },
-    metrics: stock.metrics ?? [['状态', '等待行情', '行情'], ['分类', stock.industry, '目录'], ['数据源', '名称目录', '搜索']],
+    metrics: stock.metrics ?? [['状态', '行情同步中', '行情'], ['分类', stock.industry, '目录'], ['数据源', '名称目录', '搜索']],
     signals: stock.signals ?? [
       { title: '搜索', level: '已匹配', text: '企业名称与关键词匹配。' },
-      { title: '行情', level: '等待行情', text: '点击分析后会尝试补充实时价格。' },
+      { title: '行情', level: '同步中', text: '点开分析后会尝试同步实时价格。' },
       { title: '风险', level: '需观察', text: '需要结合K线、成交额和行业变化再判断。' },
     ],
-    checklist: stock.checklist ?? ['同步实时价格', '补充历史K线', '查看行业和公告变化'],
+    checklist: stock.checklist ?? ['同步实时价格', '积累历史K线', '查看行业和公告变化'],
     dataCoverage: stock.dataCoverage ?? { quote: false, history: false, fundamental: false },
   }
 }
@@ -551,30 +551,63 @@ function hasLivePrice(stock) {
 }
 
 function displayStockPrice(stock) {
-  return hasLivePrice(stock) ? stock.price : '行情更新中'
+  return hasLivePrice(stock) ? stock.price : '行情同步中'
 }
 
 function displayStockMove(stock) {
-  return hasLivePrice(stock) ? formatPercent(stock.performance.day) : '等待行情'
+  return hasLivePrice(stock) ? formatPercent(stock.performance.day) : '同步中'
 }
 
 function StockPriceLine({ stock, compact = false }) {
   return (
     <span className={compact ? 'stock-price-line is-compact' : 'stock-price-line'}>
-      <b>{hasLivePrice(stock) ? `¥${stock.price}` : '行情更新中'}</b>
+      <b>{hasLivePrice(stock) ? `¥${stock.price}` : '行情同步中'}</b>
       {hasLivePrice(stock) && <em>/股</em>}
     </span>
   )
 }
 
-function formatStatValue(value, suffix = '') {
-  if (value === null || value === undefined || value === '') return '数据源暂缺'
+function missingLabel(kind = 'field') {
+  if (kind === 'quote') return '行情同步中'
+  if (kind === 'history') return '样本积累中'
+  if (kind === 'fundamental') return '暂未披露'
+  if (kind === 'trend') return '观察中'
+  return '暂未披露'
+}
+
+function normalizeDataCopy(value) {
+  return String(value ?? '')
+    .replaceAll('待补充', '持续跟踪')
+    .replaceAll('待分析', '持续观察')
+    .replaceAll('等待行情', '行情同步中')
+    .replaceAll('行情更新中', '行情同步中')
+    .replaceAll('待同步', '同步中')
+    .replaceAll('数据源暂缺', '暂未披露')
+    .replaceAll('暂无公开数据', '暂未披露')
+    .replaceAll('暂无数据', '暂未披露')
+    .replaceAll('暂缺完整基本面和历史指标', '基本面和历史样本仍在完善')
+    .replaceAll('补充分析', '继续分析')
+    .replaceAll('补充数据', '继续同步数据')
+    .replaceAll('暂未计算完整技术指标和基本面评分。', '技术指标和基本面评分样本仍在完善。')
+    .replaceAll('补齐', '完善')
+}
+
+function normalizedTags(tags = []) {
+  return [...new Set(tags.map((tag) => normalizeDataCopy(tag)).filter(Boolean))]
+}
+
+function hasStatValue(value) {
+  return !(value === null || value === undefined || value === '')
+}
+
+function formatStatValue(value, suffix = '', kind = 'field') {
+  if (!hasStatValue(value)) return missingLabel(kind)
   if (typeof value === 'number') return `${value.toFixed(2)}${suffix}`
   return `${value}${suffix}`
 }
 
-function formatLevelValue(value, suffix = '') {
-  if (value === null || value === undefined || value === '') return '数据源暂缺'
+function formatLevelValue(value, suffix = '', kind = 'field') {
+  if (!hasStatValue(value)) return missingLabel(kind)
   if (typeof value === 'number') return `${value.toFixed(value >= 100 ? 1 : 2)}${suffix}`
   return `${value}${suffix}`
 }
@@ -593,14 +626,14 @@ function buildStockStats(stock, candles = null) {
     ?? null
 
   return [
-    ['今日开盘价', stats.open ?? lastCandle?.open],
-    ['昨日收市价', previousClose],
-    ['今日最高价', stats.dayHigh ?? lastCandle?.high],
-    ['今日最低价', stats.dayLow ?? lastCandle?.low],
-    ['历史最高价', historyHigh],
-    ['成交量', stats.volume],
-    ['成交额', stats.amount],
-    ['企业市值', stats.marketCap],
+    ['今日开盘价', stats.open ?? lastCandle?.open, 'quote'],
+    ['昨日收市价', previousClose, 'quote'],
+    ['今日最高价', stats.dayHigh ?? lastCandle?.high, 'quote'],
+    ['今日最低价', stats.dayLow ?? lastCandle?.low, 'quote'],
+    ['历史最高价', historyHigh, 'history'],
+    ['成交量', stats.volume, 'quote'],
+    ['成交额', stats.amount, 'quote'],
+    ['企业市值', stats.marketCap, 'fundamental'],
   ]
 }
 
@@ -712,8 +745,8 @@ function buildStockDecision(stock) {
     return {
       hasHistory,
       holdingAdvice: '先观察，不建议仅凭实时涨跌重仓',
-      trendView: '当前只有实时价格，历史 K 线还在补充中，先看价格是否连续稳定，再判断仓位。',
-      systemAnalysis: `已读取实时价格和今日涨跌，但缺少完整历史走势。${industryHint}、财报和成交量还需要补充后再做判断。`,
+      trendView: '当前已有实时价格，历史 K 线样本还在积累中，先看价格是否连续稳定，再判断仓位。',
+      systemAnalysis: `已读取实时价格和今日涨跌，但历史走势样本还不完整。${industryHint}、财报和成交量需要继续跟踪后再判断。`,
     }
   }
 
@@ -781,7 +814,7 @@ function buildPortfolioAdvice(portfolio, concentration, portfolioDayGain) {
   const advice = []
 
   if (concentration.industry === '未分类持仓') {
-    advice.push(`未分类持仓占比 ${topRatio}%，说明部分股票还缺少明确行业标签。先补齐行业和基础数据，再判断是否真的集中。`)
+    advice.push(`未分类持仓占比 ${topRatio}%，说明部分股票还缺少明确行业标签。先完善行业和基础数据，再判断是否真的集中。`)
   } else if (topRatio >= 60) {
     advice.push(`${concentration.industry}占比 ${topRatio}%，组合对单一分类变化比较敏感，新增资金先不要继续集中到这个方向。`)
   } else if (topRatio >= 40) {
@@ -2184,11 +2217,11 @@ function HomeView({
         <div className="recommendation-analysis">
           <div>
             <span>看好理由</span>
-            <p>{recommendationDecision.trendView}</p>
+            <p>{normalizeDataCopy(recommendationDecision.trendView)}</p>
           </div>
           <div>
             <span>主要风险</span>
-            <p>{recommendationDecision.systemAnalysis}</p>
+            <p>{normalizeDataCopy(recommendationDecision.systemAnalysis)}</p>
           </div>
           <div>
             <span>观察点</span>
@@ -2197,7 +2230,7 @@ function HomeView({
         </div>
 
         <div className="tag-row">
-          {recommendedStock.tags.map((tag) => (
+          {normalizedTags(recommendedStock.tags).map((tag) => (
             <span key={tag}>{tag}</span>
           ))}
         </div>
@@ -2477,7 +2510,7 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
           {decision.hasHistory ? (
             <strong className={trendClass(monthMove)}>{formatPercent(monthMove)}</strong>
           ) : (
-            <strong>数据源暂缺</strong>
+            <strong className="is-pending">{missingLabel('history')}</strong>
           )}
         </div>
       </div>
@@ -2487,12 +2520,12 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
           <span>综合判断</span>
           <strong>{analysisScore.total}</strong>
         </div>
-        <p>{analysisScore.stance}：{analysisScore.reasons.join('，')}</p>
+          <p>{normalizeDataCopy(`${analysisScore.stance}：${analysisScore.reasons.join('，')}`)}</p>
       </div>
 
       <div className="decision-copy">
         <span>未来走势</span>
-        <p>{decision.trendView}</p>
+          <p>{normalizeDataCopy(decision.trendView)}</p>
       </div>
 
       <details className="analysis-disclosure analysis-more">
@@ -2571,15 +2604,15 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
                 <article key={signal.name}>
                   <div>
                     <span>{signal.name}</span>
-                    <strong>{signal.value}</strong>
-                  </div>
-                  <p>{signal.text}</p>
+                  <strong>{normalizeDataCopy(signal.value)}</strong>
+                </div>
+                  <p>{normalizeDataCopy(signal.text)}</p>
                 </article>
               ))}
             </div>
             <div className="competitive-impact">
               <span>对持仓的影响</span>
-              <p>{competitiveIntel.holdingImpact}</p>
+              <p>{normalizeDataCopy(competitiveIntel.holdingImpact)}</p>
             </div>
             <div className="competitive-intel-lists">
               <div>
@@ -2616,31 +2649,31 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
                 <article key={metric.name}>
                   <div>
                     <span>{metric.name}</span>
-                    <b>{metric.status}</b>
-                  </div>
-                  <strong>{metric.value}</strong>
-                  <p>{metric.note}</p>
+                  <b>{normalizeDataCopy(metric.status)}</b>
+                </div>
+                  <strong>{normalizeDataCopy(metric.value)}</strong>
+                  <p>{normalizeDataCopy(metric.note)}</p>
                 </article>
               ))}
             </div>
             <div className="fundamental-impact">
               <span>对持仓的影响</span>
-              <p>{fundamentalProfile.holdingImpact}</p>
+              <p>{normalizeDataCopy(fundamentalProfile.holdingImpact)}</p>
             </div>
             <div className="fundamental-profile-lists">
               <div>
                 <span>已有依据</span>
-                {fundamentalProfile.strengths?.slice(0, 2).map((item) => <p key={item}>{item}</p>)}
+                {fundamentalProfile.strengths?.slice(0, 2).map((item) => <p key={item}>{normalizeDataCopy(item)}</p>)}
               </div>
               <div>
-                <span>继续补充</span>
-                {fundamentalProfile.nextData?.slice(0, 3).map((item) => <p key={item}>{item}</p>)}
+                <span>继续跟踪</span>
+                {fundamentalProfile.nextData?.slice(0, 3).map((item) => <p key={item}>{normalizeDataCopy(item)}</p>)}
               </div>
             </div>
             {fundamentalProfile.risks?.length > 0 && (
               <div className="fundamental-risk-list">
                 <span>资料风险</span>
-                {fundamentalProfile.risks.slice(0, 2).map((item) => <p key={item}>{item}</p>)}
+                {fundamentalProfile.risks.slice(0, 2).map((item) => <p key={item}>{normalizeDataCopy(item)}</p>)}
               </div>
             )}
             <small>{fundamentalProfile.compliance}</small>
@@ -2847,7 +2880,7 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
         </summary>
         <div className="decision-copy">
           <span>系统分析</span>
-          <p>{decision.systemAnalysis}</p>
+          <p>{normalizeDataCopy(decision.systemAnalysis)}</p>
         </div>
       </details>
 
@@ -3287,7 +3320,7 @@ function MoverGroup({ label, stocks, maxMove, onSelect }) {
           >
             <div className="mover-info">
               <strong>{stock.name}</strong>
-              <span>{stock.code} · {hasLivePrice(stock) ? `¥${stock.price}/股` : '等待行情'}</span>
+              <span>{stock.code} · {hasLivePrice(stock) ? `¥${stock.price}/股` : '行情同步中'}</span>
             </div>
             <Sparkline points={stock.sparkline} positive={move >= 0} />
             <div className={move >= 0 ? 'mover-change is-up' : 'mover-change is-down'}>
@@ -3462,11 +3495,11 @@ function TechnicalLevels({ candles }) {
     <div className="technical-levels" aria-label="技术位提示">
       <div>
         <span>支撑位</span>
-        <strong>{formatStatValue(levels.support)}</strong>
+        <strong className={hasStatValue(levels.support) ? '' : 'is-pending'}>{formatStatValue(levels.support, '', 'history')}</strong>
       </div>
       <div>
         <span>压力位</span>
-        <strong>{formatStatValue(levels.resistance)}</strong>
+        <strong className={hasStatValue(levels.resistance) ? '' : 'is-pending'}>{formatStatValue(levels.resistance, '', 'history')}</strong>
       </div>
       <p>{levels.trendSignal}，{levels.volumeSignal}。</p>
     </div>
@@ -3478,10 +3511,10 @@ function StockStatsGrid({ stock, candles = null }) {
 
   return (
     <div className="stock-stats-grid" aria-label={`${stock.name}关键行情数据`}>
-      {stats.map(([label, value]) => (
+      {stats.map(([label, value, kind]) => (
         <div key={label}>
           <span>{label}</span>
-          <strong>{formatStatValue(value)}</strong>
+          <strong className={hasStatValue(value) ? '' : 'is-pending'}>{formatStatValue(value, '', kind)}</strong>
         </div>
       ))}
     </div>
@@ -3492,8 +3525,8 @@ function KLineView({ stock, setActiveTab, returnTab, candles }) {
   const displayCandles = candles?.length ? candles : stock.klineRows?.length ? stock.klineRows : buildKLineData(stock)
   const dataQuality = stock.dataQuality ?? stock.analysisScore?.dataQuality
   const sourceTrust = stock.sourceTrust ?? dataQuality?.sourceTrust
-  const quoteSource = stock.quoteStats?.source ?? stock.quote?.source ?? '待同步'
-  const klineSource = stock.klineSource ?? stock.historyProvider ?? (stock.dataCoverage?.history ? '历史K线' : '缓存积累中')
+  const quoteSource = stock.quoteStats?.source ?? stock.quote?.source ?? '行情同步中'
+  const klineSource = stock.klineSource ?? stock.historyProvider ?? (stock.dataCoverage?.history ? '历史K线' : '样本积累中')
   return (
     <div className="view-stack kline-view">
       <button className="back-button" type="button" onClick={() => setActiveTab(returnTab)}>
@@ -3801,7 +3834,7 @@ function PortfolioView({
             <ShieldAlert size={18} />
             <h2>组合诊断</h2>
           </div>
-          <span>{portfolioInsights?.riskLabel ?? '等待同步'}</span>
+          <span>{portfolioInsights?.riskLabel ?? '组合评估中'}</span>
         </div>
         <div className="insight-score">
           <strong>{portfolioInsights?.riskScore ?? healthScore}</strong>
@@ -3855,7 +3888,7 @@ function PortfolioView({
             </div>
             <div>
               <span>数据置信度</span>
-              <strong>{riskEngine.dataConfidence?.label ?? '待同步'}</strong>
+              <strong>{riskEngine.dataConfidence?.label ?? '评估中'}</strong>
             </div>
           </div>
           <div className="risk-engine-notes">
@@ -3919,7 +3952,7 @@ function PortfolioView({
           </div>
           <p>
             {concentration.industry === '未分类持仓'
-              ? '部分持仓还缺少行业标签，系统会在数据补齐后重新计算分类分布。'
+              ? '部分持仓还缺少行业标签，系统会在数据同步后重新计算分类分布。'
               : `${concentration.industry} 是当前占比最高的分类。`}
           </p>
         </div>
@@ -4417,7 +4450,7 @@ function ProfileView({
           </div>
           <div>
             <span>行情来源</span>
-            <strong>{dataStatus?.sourceTrust?.label ?? dataStatus?.source ?? '等待同步'}</strong>
+            <strong>{dataStatus?.sourceTrust?.label ?? dataStatus?.source ?? '同步中'}</strong>
           </div>
           <div>
             <span>未读通知</span>
@@ -4569,7 +4602,7 @@ function OperationalMonitorCard({ systemMonitor, systemStatus }) {
       label: '行情',
       ok: dataSignal?.ok ?? systemStatus?.checks?.data?.ok,
       value: dataSignal?.ageMinutes === null || dataSignal?.ageMinutes === undefined
-        ? '等待刷新'
+        ? '准备刷新'
         : `${dataSignal.ageMinutes} 分钟前`,
     },
     {
@@ -5094,7 +5127,7 @@ function WatchView({
                 </div>
                 <div className="watch-reason">
                   <span>为什么关注</span>
-                  <p>{watchDecision.trendView}</p>
+                  <p>{normalizeDataCopy(watchDecision.trendView)}</p>
                 </div>
                 <div className="watch-actions">
                   <span className={`mini-risk tone-${stock.tone}`}>
@@ -5323,7 +5356,7 @@ function WatchView({
                             : source.status === 'free-cache'
                               ? '免费缓存'
                               : source.status === 'waiting'
-                                ? '等待补齐'
+                                ? '同步中'
                                 : source.status}
                     </strong>
                     <p>{source.text}</p>
@@ -5398,7 +5431,7 @@ function WatchView({
       <section className="author-note">
         <span>Alex-w有话说</span>
         <p>
-          股镜会先把搜索、持仓、观察和行情缓存做稳，再逐步补齐更深的研究和通知能力。
+          股镜会先把搜索、持仓、观察和行情缓存做稳，再逐步完善更深的研究和通知能力。
         </p>
         <div>
           <strong>最近进度</strong>

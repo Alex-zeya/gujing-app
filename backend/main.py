@@ -690,6 +690,34 @@ def from_json(value: str) -> Any:
     return json.loads(value)
 
 
+def sanitize_display_text(value: Any) -> Any:
+    replacements = {
+        "待补充": "持续跟踪",
+        "待分析": "持续观察",
+        "等待行情": "行情同步中",
+        "行情更新中": "行情同步中",
+        "待同步": "同步中",
+        "数据源暂缺": "暂未披露",
+        "暂无公开数据": "暂未披露",
+        "暂无数据": "暂未披露",
+        "暂缺完整基本面和历史指标": "基本面和历史样本仍在完善",
+        "补充分析": "继续分析",
+        "补充数据": "继续同步数据",
+        "暂未计算完整技术指标和基本面评分。": "技术指标和基本面评分样本仍在完善。",
+        "补齐": "完善",
+    }
+    if isinstance(value, str):
+        text = value
+        for source, target in replacements.items():
+            text = text.replace(source, target)
+        return text
+    if isinstance(value, list):
+        return [sanitize_display_text(item) for item in value]
+    if isinstance(value, dict):
+        return {key: sanitize_display_text(item) for key, item in value.items()}
+    return value
+
+
 def normalize_alert_settings(value: dict[str, Any] | None) -> dict[str, Any]:
     return {**DEFAULT_ALERT_SETTINGS, **(value or {})}
 
@@ -1062,7 +1090,7 @@ def get_stock_or_404(code: str) -> dict[str, Any]:
         row = db.execute("SELECT payload FROM stocks WHERE code = ?", (clean,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="stock not found")
-    return from_json(row["payload"])
+    return sanitize_display_text(from_json(row["payload"]))
 
 
 def ensure_stock_record(code: str) -> dict[str, Any]:
@@ -1084,7 +1112,7 @@ def ensure_stock_record(code: str) -> dict[str, Any]:
 def list_stocks() -> list[dict[str, Any]]:
     with connect() as db:
         rows = db.execute("SELECT payload FROM stocks ORDER BY code").fetchall()
-    return [from_json(row["payload"]) for row in rows]
+    return [sanitize_display_text(from_json(row["payload"])) for row in rows]
 
 
 def list_watchlist_codes() -> list[str]:
@@ -1122,24 +1150,24 @@ def build_stock_from_directory(code: str, name: str, industry: str = "A股") -> 
         "sparkline": [42, 42, 43, 42, 44, 43, 45, 44, 45, 46],
         "chart": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         "tone": "neutral",
-        "pulse": "已找到股票名称，正在等待行情和历史 K 线补充。",
-        "updated": "等待行情",
+        "pulse": "已找到股票名称，正在同步行情并积累历史 K 线样本。",
+        "updated": "行情同步中",
         "score": 58,
-        "tags": [industry or "A股", "等待行情"],
+        "tags": [industry or "A股", "行情同步中"],
         "idea": {
             "stance": "先观察",
             "horizon": "短中期",
-            "reason": "已从股票名称目录匹配，后续会补充实时价格、K线和行业信息。",
-            "risk": "行情和历史数据尚未完整同步，暂不适合直接做持仓判断。",
+            "reason": "已从股票名称目录匹配，后续会同步实时价格、K线和行业信息。",
+            "risk": "当前只有目录信息，暂不适合直接做持仓判断。",
             "trigger": "行情同步完成后再查看趋势、估值和风险提示。",
         },
-        "metrics": [["状态", "等待行情", "行情"], ["分类", industry or "A股", "目录"], ["数据源", "股票名称表", "搜索"]],
+        "metrics": [["状态", "行情同步中", "行情"], ["分类", industry or "A股", "目录"], ["数据源", "股票名称表", "搜索"]],
         "signals": [
             {"title": "搜索", "level": "已匹配", "text": "企业名称和股票代码已识别。"},
-            {"title": "行情", "level": "等待行情", "text": "正在等待公开行情源返回价格。"},
+            {"title": "行情", "level": "同步中", "text": "正在请求公开行情源返回价格。"},
             {"title": "分析", "level": "持续跟踪", "text": "系统会结合 K线、成交额和行业数据继续完善判断。"},
         ],
-        "checklist": ["同步实时价格", "补充历史 K线", "查看行业和公告变化"],
+        "checklist": ["同步实时价格", "积累历史 K线", "查看行业和公告变化"],
         "dataCoverage": {"quote": False, "history": False, "fundamental": False},
     }
 
@@ -1452,6 +1480,7 @@ def save_tushare_token(token: str) -> None:
 
 
 def upsert_stock(stock: dict[str, Any]) -> None:
+    stock = sanitize_display_text(stock)
     with connect() as db:
         db.execute(
             "INSERT OR REPLACE INTO stocks (code, payload) VALUES (?, ?)",
@@ -1889,7 +1918,7 @@ def build_stock_from_quote(code: str, quote: dict[str, Any]) -> dict[str, Any]:
         "sparkline": [42, 43, 42, 45, 44, 46, 47, 46, 48, 48],
         "chart": chart_seed,
         "tone": "neutral",
-        "pulse": "已接入实时行情，系统会继续补充公开基本面数据。",
+        "pulse": "已接入实时行情，系统会继续跟踪公开基本面数据。",
         "updated": quote_time_text(quote),
         "score": 60,
         "tags": ["实时行情", "公开数据"],
@@ -2353,7 +2382,7 @@ def stock_source_trust(stock: dict[str, Any]) -> dict[str, Any]:
     elif average >= 58:
         trust_label = "基本可信"
     else:
-        trust_label = "需要补充"
+        trust_label = "样本不足"
     return {
         "score": average,
         "label": trust_label,
@@ -2381,7 +2410,7 @@ def stock_data_quality(stock: dict[str, Any]) -> dict[str, Any]:
     elif score >= 60:
         label = "基本可用"
     else:
-        label = "需要补充"
+        label = "样本不足"
     warnings: list[str] = []
     if not has_quote:
         warnings.append("实时行情不足，建议仅作观察。")
@@ -2448,7 +2477,7 @@ def stock_data_coverage_summary() -> dict[str, Any]:
         "fundamental": bucket(fundamental_count),
         "marketCap": bucket(market_cap_count),
         "turnover": bucket(turnover_count),
-        "message": "免费源会优先补齐目录、行情、K线和基础字段；缺失字段保留最近一次有效缓存，不用空值覆盖。",
+        "message": "免费源会优先同步目录、行情、K线和基础字段；缺失字段保留最近一次有效缓存，不用空值覆盖。",
     }
 
 
@@ -2479,7 +2508,7 @@ def data_source_capabilities(status: dict[str, Any], directory_status: dict[str,
             "name": "历史K线",
             "source": "AkShare / Tushare",
             "status": "token-ready" if has_tushare else "free-cache",
-            "refresh": "每日补齐",
+            "refresh": "每日同步",
             "free": not has_tushare,
             "text": "用于趋势、波动、回撤和持仓建议；免费源优先，后续可切换授权源提高稳定性。",
         },
@@ -2774,7 +2803,7 @@ def market_cap_text(stock: dict[str, Any]) -> str:
     raw_value = (stock.get("quoteStats") or {}).get("marketCap") or stock.get("marketCap")
     value = number_or_none(raw_value)
     if value is None or value <= 0:
-        return "暂无公开数据"
+        return "暂未披露"
     if value >= 100000000:
         return f"{value / 100000000:.1f} 亿"
     if value >= 10000:
@@ -2792,7 +2821,7 @@ def industry_competitive_rules(industry: str | None) -> dict[str, Any]:
     return INDUSTRY_COMPETITIVE_RULES["default"]
 
 
-def compact_metric_text(value: Any, fallback: str = "暂无公开数据") -> str:
+def compact_metric_text(value: Any, fallback: str = "暂未披露") -> str:
     if value is None or value == "":
         return fallback
     return str(value)
@@ -2823,7 +2852,7 @@ def valuation_text(stock: dict[str, Any]) -> str:
         parts.append(f"PE {pe:.1f}")
     if pb is not None and pb > 0:
         parts.append(f"PB {pb:.2f}")
-    return " / ".join(parts) if parts else "暂无公开数据"
+    return " / ".join(parts) if parts else "暂未披露"
 
 
 def amount_activity_text(stock: dict[str, Any]) -> str:
@@ -2831,7 +2860,7 @@ def amount_activity_text(stock: dict[str, Any]) -> str:
     for key in ("amount", "turnover", "volume"):
         if stats.get(key):
             return str(stats[key])
-    return "暂无公开数据"
+    return "暂未披露"
 
 
 def build_fundamental_profile(
@@ -2858,11 +2887,11 @@ def build_fundamental_profile(
     amount_text = amount_activity_text(stock)
 
     field_checks = {
-        "市值": market_cap != "暂无公开数据",
-        "估值": valuation != "暂无公开数据",
+        "市值": market_cap != "暂未披露",
+        "估值": valuation != "暂未披露",
         "盈利": eps is not None or revenue_growth is not None or profit_growth is not None or gross_margin is not None,
         "负债": debt_ratio is not None,
-        "交易": bool(open_price or previous_close or amount_text != "暂无公开数据"),
+        "交易": bool(open_price or previous_close or amount_text != "暂未披露"),
     }
     available_count = sum(1 for value in field_checks.values() if value)
     source_score = int((quality.get("sourceTrust") or {}).get("score") or 50)
@@ -2881,25 +2910,25 @@ def build_fundamental_profile(
         {
             "name": "企业市值",
             "value": market_cap,
-            "status": "已读取" if market_cap != "暂无公开数据" else "暂无数据",
+            "status": "已读取" if market_cap != "暂未披露" else "暂未披露",
             "note": "用于判断公司体量和波动承受能力。",
         },
         {
             "name": "估值字段",
             "value": valuation,
-            "status": "已读取" if valuation != "暂无公开数据" else "暂无数据",
+            "status": "已读取" if valuation != "暂未披露" else "暂未披露",
             "note": "后续会加入估值分位，避免只看静态PE/PB。",
         },
         {
             "name": "盈利字段",
             "value": f"EPS {eps:.2f}" if eps is not None else compact_metric_text(profit_growth or revenue_growth or gross_margin),
-            "status": "已读取" if field_checks["盈利"] else "暂无数据",
+            "status": "已读取" if field_checks["盈利"] else "暂未披露",
             "note": "更完整的版本会看营收、利润和毛利率变化。",
         },
         {
             "name": "交易活跃",
             "value": amount_text,
-            "status": "已读取" if amount_text != "暂无公开数据" else "暂无数据",
+            "status": "已读取" if amount_text != "暂未披露" else "同步中",
             "note": "成交越活跃，短线信号更容易被验证。",
         },
     ]
@@ -2924,18 +2953,18 @@ def build_fundamental_profile(
 
     strengths = []
     risks = []
-    if market_cap != "暂无公开数据":
+    if market_cap != "暂未披露":
         strengths.append("已拿到企业体量字段，可以辅助判断公司规模和行业位置。")
     else:
         risks.append("市值缺失时，无法判断公司体量和估值安全边际。")
-    if valuation != "暂无公开数据":
+    if valuation != "暂未披露":
         strengths.append("已读取估值字段，后续可继续做估值分位和同行对比。")
     else:
         risks.append("估值字段不足，不能只凭涨跌幅判断是否便宜。")
     if field_checks["盈利"]:
         strengths.append("已有部分盈利或成长字段，可以开始做基本面跟踪。")
     else:
-        risks.append("营收、利润、毛利率等财报字段仍需补齐。")
+        risks.append("营收、利润、毛利率等财报字段仍需继续跟踪。")
     if (competitive_intel or {}).get("verdict"):
         strengths.append(f"行业竞争力结论：{competitive_intel['verdict']}。")
     if source_score < 60:
@@ -2945,7 +2974,7 @@ def build_fundamental_profile(
     if score >= 74:
         holding_impact = "基本面资料较完整，可以和趋势、仓位一起用于判断是否继续持有。"
     elif score >= 56:
-        holding_impact = "基本面可做辅助，如果已经持有，先控制仓位并等待财报字段补齐。"
+        holding_impact = "基本面可做辅助，如果已经持有，先控制仓位并等待财报字段继续完善。"
 
     return {
         "version": FUNDAMENTAL_PROFILE_VERSION,
@@ -2992,7 +3021,7 @@ def build_industry_competitive_intel(
     moat_score = clamp_score(
         48
         + (12 if stock.get("tags") else 0)
-        + (10 if market_cap != "暂无公开数据" else -5)
+        + (10 if market_cap != "暂未披露" else -5)
         + (8 if stock.get("industry") and stock.get("industry") != "A股" else 0)
     )
     valuation_safety = clamp_score(
@@ -3017,7 +3046,7 @@ def build_industry_competitive_intel(
         holding_impact = "可以继续看行业信号，但不适合只因为行业热度直接加仓。"
     elif data_score < 55:
         verdict = "资料不足，先补证据"
-        holding_impact = "现阶段先补齐行业新闻、公告和财报字段，再提高建议强度。"
+        holding_impact = "现阶段先跟踪行业新闻、公告和财报字段，再提高建议强度。"
     else:
         verdict = "竞争压力需观察"
         holding_impact = "如果已经持有，需要确认它是否仍跑赢同板块核心公司。"
@@ -3119,7 +3148,7 @@ def build_research_framework(
         technical_evidence.append(f"MA5 {ma5:.2f}，MA20 {ma20:.2f}，用于判断短中期方向。")
 
     market_cap = market_cap_text(stock)
-    has_fundamental = market_cap != "暂无公开数据" or bool(stock.get("metrics"))
+    has_fundamental = market_cap != "暂未披露" or bool(stock.get("metrics"))
     fundamental_score = clamp_score(
         45
         + (16 if has_fundamental else -8)
@@ -3135,7 +3164,7 @@ def build_research_framework(
     ]
     if quote_stats.get("open") or quote_stats.get("prevClose"):
         fundamental_evidence.append(
-            f"今日开盘 {quote_stats.get('open') or '暂无公开数据'}，昨日收盘 {quote_stats.get('prevClose') or '暂无公开数据'}。"
+            f"今日开盘 {quote_stats.get('open') or '行情同步中'}，昨日收盘 {quote_stats.get('prevClose') or '行情同步中'}。"
         )
 
     positive_news = int(news_counts.get("positive", 0) or 0)
@@ -3201,7 +3230,7 @@ def build_research_framework(
             "score": fundamental_score,
             "summary": fundamental_summary,
             "evidence": fundamental_evidence[:3],
-            "watch": "后续需要补充财报、估值分位和行业景气数据。",
+            "watch": "后续继续跟踪财报、估值分位和行业景气数据。",
         },
         {
             "id": "news",
@@ -3463,8 +3492,8 @@ def build_stock_advice_engine(
     if data_quality["score"] < 55:
         action_code = "data_wait"
         action_label = "暂不生成明确建议"
-        action_reason = "实时行情、历史K线或基本面字段不足，建议先补充数据。"
-        next_actions.append("先等待行情和K线数据补齐，再判断是否持有或加仓。")
+        action_reason = "实时行情、历史K线或基本面字段样本不足，建议先按观察处理。"
+        next_actions.append("先观察行情和K线样本是否稳定，再判断是否持有或加仓。")
     if holding:
         if action_code == "data_wait":
             target_position = risk_profile["normalTarget"]
@@ -4851,7 +4880,7 @@ def refresh_tushare_daily_basic(code: str, trade_date: str | None = None) -> dic
         "fundamentalTradeDate": row.get("trade_date"),
     }
     stock["metrics"] = [
-        ["企业市值", stock["quoteStats"].get("marketCap") or "暂无公开数据", "Tushare"],
+        ["企业市值", stock["quoteStats"].get("marketCap") or "暂未披露", "Tushare"],
         ["PE", compact_metric_text(stock["quoteStats"].get("pe") or stock["quoteStats"].get("peTtm")), "估值"],
         ["PB", compact_metric_text(stock["quoteStats"].get("pb")), "估值"],
     ]
@@ -6034,7 +6063,7 @@ def tushare_token_save(payload: TushareTokenPayload) -> dict[str, Any]:
 
 @app.get("/api/stocks")
 def stocks_index() -> list[dict[str, Any]]:
-    return [apply_analysis_score(stock) for stock in list_curated_stocks()]
+    return [sanitize_display_text(apply_analysis_score(stock)) for stock in list_curated_stocks()]
 
 
 def search_result_summary(stock: dict[str, Any]) -> dict[str, Any]:
@@ -6059,7 +6088,7 @@ def search_result_summary(stock: dict[str, Any]) -> dict[str, Any]:
         "chart": stock.get("chart") or stock.get("sparkline") or [42, 43, 42, 44, 43, 45, 46],
         "tone": stock.get("tone", "neutral"),
         "score": stock.get("score", 55),
-        "tags": stock.get("tags", ["A股"]),
+        "tags": sanitize_display_text(stock.get("tags", ["A股"])),
         "quoteStats": {
             "open": quote_stats.get("open"),
             "previousClose": quote_stats.get("previousClose"),
@@ -6078,7 +6107,7 @@ def search_result_summary(stock: dict[str, Any]) -> dict[str, Any]:
             "fundamentalSource": quote_stats.get("fundamentalSource"),
             "source": quote_stats.get("source") or quote.get("source"),
         },
-        "updated": stock.get("updated") or stock.get("cache", {}).get("quoteRefreshedAt") or "等待行情",
+        "updated": stock.get("updated") or stock.get("cache", {}).get("quoteRefreshedAt") or "行情同步中",
     }
 
 
@@ -6104,12 +6133,12 @@ def stocks_search(keyword: str = "", full: bool = False, with_quotes: bool = Tru
         results = [get_stock_or_404(stock["code"]) for stock in results[:25]]
     if not full:
         return [search_result_summary(stock) for stock in results[:25]]
-    return [apply_analysis_score(stock) for stock in results[:25]]
+    return [sanitize_display_text(apply_analysis_score(stock)) for stock in results[:25]]
 
 
 @app.get("/api/stocks/{code}")
 def stocks_show(code: str) -> dict[str, Any]:
-    return hydrate_stock_market_data(code)
+    return sanitize_display_text(hydrate_stock_market_data(code))
 
 
 @app.post("/api/stocks/{code}/history/refresh")
@@ -6121,7 +6150,7 @@ def stocks_history_refresh(code: str) -> dict[str, Any]:
             refresh_cached_quotes([code])
             stock = apply_analysis_score(get_stock_or_404(code))
         upsert_stock(stock)
-        return stock
+        return sanitize_display_text(stock)
     except Exception as error:
         errors.append(f"tushare:{error}")
 
@@ -6133,7 +6162,7 @@ def stocks_history_refresh(code: str) -> dict[str, Any]:
         if errors:
             stock["historyProviderErrors"] = errors
         upsert_stock(stock)
-        return stock
+        return sanitize_display_text(stock)
     except Exception as error:
         errors.append(f"eastmoney:{error}")
 
@@ -6144,7 +6173,7 @@ def stocks_history_refresh(code: str) -> dict[str, Any]:
             stock = apply_analysis_score(get_stock_or_404(code))
         stock["historyProviderErrors"] = errors
         upsert_stock(stock)
-        return stock
+        return sanitize_display_text(stock)
     except Exception as error:
         errors.append(f"akshare:{error}")
         stock = ensure_stock_record(code)
@@ -6158,7 +6187,7 @@ def stocks_history_refresh(code: str) -> dict[str, Any]:
 def stocks_fundamentals_refresh(code: str) -> dict[str, Any]:
     try:
         stock = apply_analysis_score(refresh_tushare_daily_basic(code))
-        return stock
+        return sanitize_display_text(stock)
     except Exception as error:
         raise HTTPException(status_code=422, detail=f"tushare:daily_basic:{error}") from error
 
@@ -6166,7 +6195,7 @@ def stocks_fundamentals_refresh(code: str) -> dict[str, Any]:
 @app.get("/api/stocks/{code}/kline")
 def stocks_kline(code: str) -> dict[str, Any]:
     stock = hydrate_stock_market_data(code)
-    return {
+    return sanitize_display_text({
         "code": stock["code"],
         "name": stock["name"],
         "candles": stock.get("klineRows") or build_kline(stock),
@@ -6175,19 +6204,19 @@ def stocks_kline(code: str) -> dict[str, Any]:
         "dataQuality": stock.get("dataQuality") or stock_data_quality(stock),
         "sourceTrust": stock.get("sourceTrust") or stock_source_trust(stock),
         "stock": stock,
-    }
+    })
 
 
 @app.get("/api/stocks/{code}/analysis")
 def stocks_analysis(code: str) -> dict[str, Any]:
     stock = apply_analysis_score(apply_snapshot_history(get_stock_or_404(code)))
     upsert_stock(stock)
-    return {
+    return sanitize_display_text({
         "code": stock["code"],
         "name": stock["name"],
         "analysisScore": stock["analysisScore"],
         "newsImpact": stock.get("newsImpact"),
-    }
+    })
 
 
 @app.get("/api/stocks/{code}/news")
@@ -7161,7 +7190,7 @@ def compute_advice_backtest_result(
             "returnPct": None,
             "hit": None,
             "status": "pending",
-            "reason": "暂无日K快照，等待行情沉淀。",
+            "reason": "日K快照仍在积累，先按观察处理。",
         }
 
     entry_index = None

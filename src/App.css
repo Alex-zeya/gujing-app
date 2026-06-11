@@ -558,6 +558,10 @@
   font-weight: 900;
 }
 
+.stock-price-line b:only-child {
+  color: var(--primary);
+}
+
 .stock-price-line em {
   color: var(--muted);
   font-size: 11px;
@@ -1779,6 +1783,25 @@
   font-size: 17px;
 }
 
+.technical-levels strong.is-pending,
+.stock-stats-grid strong.is-pending,
+.decision-grid strong.is-pending {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid oklch(0.82 0.035 255);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: oklch(0.965 0.014 255);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
 .technical-levels p {
   grid-column: 1 / -1;
   margin: 0;
@@ -1865,6 +1888,10 @@
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.stock-stats-grid strong.is-pending {
+  margin-left: auto;
 }
 
 .mover-change {
