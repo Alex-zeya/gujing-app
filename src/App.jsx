@@ -513,7 +513,7 @@ function displayCategory(value, stock = {}) {
   if (/白酒|食品|饮料|消费|啤酒|乳|家电|零售|旅游/.test(text)) return '消费'
   if (/医疗|医药|生物|药|医院|健康|器械|疫苗|诊断/.test(text)) return '医药健康'
   if (/石油|煤|有色|钢铁|矿|资源|地产|建筑|建材|水泥/.test(text)) return '传统行业'
-  return '其他'
+  return raw === 'A股' ? '未分类持仓' : '其他'
 }
 
 function currency(value) {
@@ -768,7 +768,9 @@ function buildPortfolioAdvice(portfolio, concentration, portfolioDayGain) {
   const weakHolding = portfolio.find((item) => (item.totalGainRate ?? 0) <= -8)
   const advice = []
 
-  if (topRatio >= 60) {
+  if (concentration.industry === '未分类持仓') {
+    advice.push(`未分类持仓占比 ${topRatio}%，说明部分股票还缺少明确行业标签。先补齐行业和基础数据，再判断是否真的集中。`)
+  } else if (topRatio >= 60) {
     advice.push(`${concentration.industry}占比 ${topRatio}%，组合对单一分类变化比较敏感，新增资金先不要继续集中到这个方向。`)
   } else if (topRatio >= 40) {
     advice.push(`${concentration.industry}是当前第一大分类，占比 ${topRatio}%。可以继续持有，但加仓时优先看其他分类，降低组合波动。`)
@@ -3602,7 +3604,9 @@ function PortfolioView({
             <strong>{concentration.ratio}%</strong>
           </div>
           <p>
-            {concentration.industry} 是当前占比最高的分类。
+            {concentration.industry === '未分类持仓'
+              ? '部分持仓还缺少行业标签，系统会在数据补齐后重新计算分类分布。'
+              : `${concentration.industry} 是当前占比最高的分类。`}
           </p>
         </div>
         <div className="holding-advice">

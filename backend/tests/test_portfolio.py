@@ -377,6 +377,13 @@ class PortfolioFlowTest(unittest.TestCase):
         self.assertIn("quote", status["coverageSummary"])
         self.assertIn("history", status["coverageSummary"])
 
+    def test_portfolio_category_does_not_use_a_share_as_industry(self):
+        unknown = self.backend.portfolio_category_label("A股", {"name": "测试股份", "tags": ["待同步"]})
+        traditional = self.backend.portfolio_category_label("A股", {"name": "中国石油", "tags": ["石油石化"]})
+
+        self.assertEqual(unknown, "未分类持仓")
+        self.assertEqual(traditional, "传统行业")
+
     def test_search_supports_pinyin_initials(self):
         matches = self.backend.search_stocks("payh")
         self.assertTrue(matches)

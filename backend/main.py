@@ -2515,6 +2515,40 @@ def history_closes(stock: dict[str, Any]) -> list[float]:
     return [float(value) for value in stock.get("chart", []) if number_or_none(value) is not None]
 
 
+def portfolio_category_label(value: str | None, stock: dict[str, Any] | None = None) -> str:
+    raw = str(value or "").strip()
+    stock = stock or {}
+    market_only = {"", "a股", "沪深", "沪深a股", "cn", "中国a股"}
+    text = " ".join(
+        str(part)
+        for part in [
+            raw,
+            stock.get("name"),
+            stock.get("code"),
+            stock.get("industry"),
+            stock.get("pulse"),
+            *(stock.get("tags") or []),
+        ]
+        if part
+    ).lower()
+    if raw and raw.lower() not in market_only:
+        return raw
+    category_rules = [
+        (r"人工智能|智能|ai|算法|软件|云|数据|信息|算力", "人工智能"),
+        (r"科技|芯片|半导体|电子|光电|通信|计算机|新材|材料", "科技"),
+        (r"电气|电力|新能源|电池|锂|储能|光伏|风电|能源", "电气能源"),
+        (r"工业|制造|机械|机器人|自动化|机床|船舶|军工|航空|航天|特气|化工", "工业制造"),
+        (r"银行|证券|保险|金融|信托", "金融"),
+        (r"白酒|食品|饮料|消费|啤酒|乳|家电|零售|旅游", "消费"),
+        (r"医疗|医药|生物|医院|健康|器械|疫苗|诊断", "医药健康"),
+        (r"石油|煤|有色|钢铁|矿|资源|地产|建筑|建材|水泥", "传统行业"),
+    ]
+    for pattern, label in category_rules:
+        if re.search(pattern, text):
+            return label
+    return "未分类持仓"
+
+
 def volatility_percent(closes: list[float]) -> float:
     if len(closes) < 5:
         return 0
@@ -7075,7 +7109,7 @@ def portfolio_snapshot(
             {
                 "code": stock["code"],
                 "name": stock["name"],
-                "industry": stock["industry"],
+                "industry": portfolio_category_label(stock.get("industry"), stock),
                 "amount": cost_amount,
                 "shares": shares,
                 "costPrice": round(cost_price, 2),
@@ -7139,7 +7173,7 @@ def portfolio_insights(snapshot: dict[str, Any] | None = None) -> dict[str, Any]
 
     industry_totals: dict[str, float] = {}
     for item in items:
-        industry = item.get("industry") or "未分类"
+        industry = portfolio_category_label(item.get("industry"), item.get("stock") or {})
         industry_totals[industry] = industry_totals.get(industry, 0) + float(item.get("marketValue") or 0)
     industry_buckets = [
         {
