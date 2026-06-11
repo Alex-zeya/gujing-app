@@ -1417,6 +1417,12 @@ def get_data_status() -> dict[str, Any]:
     return from_json(row["payload"]) if row else DEFAULT_DATA_STATUS
 
 
+def get_app_setting(key: str, default: Any = None) -> Any:
+    with connect() as db:
+        row = db.execute("SELECT payload FROM app_settings WHERE key = ?", (key,)).fetchone()
+    return from_json(row["payload"]) if row else default
+
+
 def get_tushare_token() -> str | None:
     env_token = os.environ.get("TUSHARE_TOKEN")
     if env_token:
@@ -2394,6 +2400,105 @@ def stock_data_quality(stock: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def stock_data_coverage_summary() -> dict[str, Any]:
+    stocks = list_stocks()
+    total = len(stocks)
+    if not total:
+        return {
+            "total": 0,
+            "quote": {"count": 0, "ratio": 0},
+            "history": {"count": 0, "ratio": 0},
+            "fundamental": {"count": 0, "ratio": 0},
+            "marketCap": {"count": 0, "ratio": 0},
+            "turnover": {"count": 0, "ratio": 0},
+            "message": "股票目录还没有同步，先执行一次目录同步。",
+        }
+
+    quote_count = 0
+    history_count = 0
+    fundamental_count = 0
+    market_cap_count = 0
+    turnover_count = 0
+    for stock in stocks:
+        coverage = stock.get("dataCoverage") or {}
+        stats = stock.get("quoteStats") or {}
+        if stock_price_number(stock) > 0 and (coverage.get("quote") or stats):
+            quote_count += 1
+        if coverage.get("history") or len(stock.get("klineRows") or []) >= 20:
+            history_count += 1
+        if coverage.get("fundamental") or stats.get("marketCap") or stock.get("marketCap"):
+            fundamental_count += 1
+        if stats.get("marketCap") or stock.get("marketCap"):
+            market_cap_count += 1
+        if stats.get("amount") or stats.get("volume"):
+            turnover_count += 1
+
+    def bucket(count: int) -> dict[str, Any]:
+        return {"count": count, "ratio": round(count / total * 100, 1) if total else 0}
+
+    return {
+        "total": total,
+        "quote": bucket(quote_count),
+        "history": bucket(history_count),
+        "fundamental": bucket(fundamental_count),
+        "marketCap": bucket(market_cap_count),
+        "turnover": bucket(turnover_count),
+        "message": "免费源会优先补齐目录、行情、K线和基础字段；缺失字段保留最近一次有效缓存，不用空值覆盖。",
+    }
+
+
+def data_source_capabilities(status: dict[str, Any], directory_status: dict[str, Any]) -> list[dict[str, Any]]:
+    free_fundamentals = get_app_setting("free_fundamentals_status", {}) or {}
+    has_tushare = bool(get_tushare_token())
+    return [
+        {
+            "id": "quote",
+            "name": "实时/延迟行情",
+            "source": status.get("source") or "easyquotation",
+            "status": status.get("mode") or "unknown",
+            "refresh": f"{MARKET_REFRESH_MINUTES} 分钟",
+            "free": True,
+            "text": "用于价格、涨跌幅、涨幅榜和持仓今日盈亏；免费源可能延迟或偶发失败。",
+        },
+        {
+            "id": "directory",
+            "name": "A股名称目录",
+            "source": directory_status.get("source") or "akshare",
+            "status": directory_status.get("mode") or "unknown",
+            "refresh": f"{DIRECTORY_REFRESH_MINUTES} 分钟检查",
+            "free": True,
+            "text": f"当前目录 {directory_status.get('count', 0)} 只，支持中文名、代码、拼音首字母搜索。",
+        },
+        {
+            "id": "history",
+            "name": "历史K线",
+            "source": "AkShare / Tushare",
+            "status": "token-ready" if has_tushare else "free-cache",
+            "refresh": "每日补齐",
+            "free": not has_tushare,
+            "text": "用于趋势、波动、回撤和持仓建议；免费源优先，后续可切换授权源提高稳定性。",
+        },
+        {
+            "id": "free_fundamentals",
+            "name": "基础面字段",
+            "source": free_fundamentals.get("source") or "东方财富免费字段",
+            "status": free_fundamentals.get("mode") or "waiting",
+            "refresh": "每日一次",
+            "free": True,
+            "text": "补企业市值、成交额等展示字段；缺失时用缓存和保守评分。",
+        },
+        {
+            "id": "paid_upgrade",
+            "name": "授权数据升级",
+            "source": "Tushare Pro / EODHD",
+            "status": "configured" if has_tushare else "optional",
+            "refresh": "按授权频率",
+            "free": False,
+            "text": "以后用于更完整财报、复权K线、行业分类和跨市场数据。",
+        },
+    ]
+
+
 def compliance_disclosure(confidence_label: str | None = None) -> dict[str, Any]:
     return {
         **COMPLIANCE_DISCLOSURE,
@@ -2418,6 +2523,36 @@ def volatility_percent(closes: list[float]) -> float:
     if average <= 0:
         return 0
     return round((max(recent) - min(recent)) / average * 100, 2)
+
+
+def daily_returns(values: list[float]) -> list[float]:
+    returns: list[float] = []
+    for previous, current in zip(values, values[1:]):
+        if previous and previous > 0:
+            returns.append((current - previous) / previous)
+    return returns
+
+
+def annualized_volatility_percent(values: list[float]) -> float:
+    returns = daily_returns(values[-120:])
+    if len(returns) < 5:
+        return 0
+    mean = sum(returns) / len(returns)
+    variance = sum((value - mean) ** 2 for value in returns) / len(returns)
+    return round((variance ** 0.5) * (252 ** 0.5) * 100, 2)
+
+
+def max_drawdown_percent(values: list[float]) -> float:
+    if len(values) < 2:
+        return 0
+    peak = values[0]
+    worst = 0.0
+    for value in values[1:]:
+        if value > peak:
+            peak = value
+        if peak > 0:
+            worst = min(worst, (value - peak) / peak)
+    return round(abs(worst) * 100, 2)
 
 
 def moving_average(values: list[float], window: int) -> float | None:
@@ -5601,6 +5736,7 @@ def data_status_show() -> dict[str, Any]:
     status = get_data_status()
     directory_status = get_directory_status()
     source_score, source_label = source_reliability_label(status.get("source"))
+    coverage_summary = stock_data_coverage_summary()
     return {
         **status,
         "stockDirectory": {
@@ -5608,11 +5744,20 @@ def data_status_show() -> dict[str, Any]:
             "refreshIntervalMinutes": DIRECTORY_REFRESH_MINUTES,
             "stale": stock_directory_is_stale(),
         },
+        "dataStrategy": {
+            "mode": "free-first",
+            "dailyBackfill": True,
+            "missingPolicy": "保留最近一次有效缓存，不用空值覆盖。",
+            "upgradePath": ["Tushare Pro", "EODHD", "交易所授权行情"],
+        },
         "sourceTrust": {
             "score": source_score,
             "label": source_label,
             "source": status.get("source"),
         },
+        "sourceCapabilities": data_source_capabilities(status, directory_status),
+        "coverageSummary": coverage_summary,
+        "freeFundamentals": get_app_setting("free_fundamentals_status", {}),
         "providers": {
             "quote": ["easyquotation:tencent", "easyquotation:sina"],
             "history": ["Tushare", "东方财富"],
@@ -6990,6 +7135,7 @@ def portfolio_insights(snapshot: dict[str, Any] | None = None) -> dict[str, Any]
     total_market_value = float(data.get("totalAmount") or 0)
     total_gain = float(data.get("totalGain") or 0)
     day_gain = float(data.get("dayGain") or 0)
+    risk_profile = data.get("riskProfile") or risk_profile_rules("稳健")
 
     industry_totals: dict[str, float] = {}
     for item in items:
@@ -7008,16 +7154,89 @@ def portfolio_insights(snapshot: dict[str, Any] | None = None) -> dict[str, Any]
     weak_holding = min(items, key=lambda item: float(item.get("totalGainRate") or 0), default=None)
     largest_loss = min(items, key=lambda item: float(item.get("totalGain") or 0), default=None)
     largest_profit = max(items, key=lambda item: float(item.get("totalGain") or 0), default=None)
-    weighted_day_volatility = sum(
-        abs(float(item.get("performance", {}).get("day", 0) or 0)) * float(item.get("positionRatio") or 0) / 100
-        for item in items
+
+    position_ratios = [float(item.get("positionRatio") or 0) for item in items]
+    industry_ratios = [float(bucket.get("ratio") or 0) for bucket in industry_buckets]
+    top_position_ratio = float(top_holding.get("positionRatio") or 0) if top_holding else 0
+    hhi = round(sum((ratio / 100) ** 2 for ratio in position_ratios), 4) if position_ratios else 0
+    industry_hhi = round(sum((ratio / 100) ** 2 for ratio in industry_ratios), 4) if industry_ratios else 0
+    effective_positions = round(1 / hhi, 1) if hhi else 0
+    weighted_day_volatility = 0.0
+    weighted_annual_volatility = 0.0
+    weighted_drawdown = 0.0
+    weighted_data_quality = 0.0
+    weighted_liquidity = 0.0
+    high_volatility_weight = 0.0
+    weak_data_weight = 0.0
+    loss_pressure_weight = 0.0
+    high_risk_positions: list[dict[str, Any]] = []
+
+    for item in items:
+        ratio = float(item.get("positionRatio") or 0)
+        stock = item.get("stock") or {}
+        performance = stock.get("performance") or {}
+        closes = history_closes(stock)
+        day_move = abs(float(performance.get("day") or 0))
+        annual_volatility = annualized_volatility_percent(closes)
+        drawdown = max_drawdown_percent(closes)
+        quality = stock_data_quality(stock)
+        amount_value = number_or_none((stock.get("quoteStats") or {}).get("amount"))
+        liquidity_score = 70
+        if amount_value is not None:
+            if amount_value >= 1_000_000_000:
+                liquidity_score = 92
+            elif amount_value >= 300_000_000:
+                liquidity_score = 82
+            elif amount_value >= 80_000_000:
+                liquidity_score = 68
+            else:
+                liquidity_score = 45
+        elif stock_price_number(stock) > 0:
+            liquidity_score = 55
+        else:
+            liquidity_score = 35
+
+        weighted_day_volatility += day_move * ratio / 100
+        weighted_annual_volatility += annual_volatility * ratio / 100
+        weighted_drawdown += drawdown * ratio / 100
+        weighted_data_quality += float(quality.get("score") or 0) * ratio / 100
+        weighted_liquidity += liquidity_score * ratio / 100
+        if annual_volatility >= 45 or day_move >= 5:
+            high_volatility_weight += ratio
+        if float(quality.get("score") or 0) < 60:
+            weak_data_weight += ratio
+        if float(item.get("totalGainRate") or 0) <= -8:
+            loss_pressure_weight += ratio
+        if ratio >= float(risk_profile.get("heavyPosition") or 30) or annual_volatility >= 45 or drawdown >= 18:
+            high_risk_positions.append({
+                "code": item.get("code"),
+                "name": item.get("name"),
+                "positionRatio": round(ratio, 2),
+                "annualVolatility": round(annual_volatility, 2),
+                "maxDrawdown": round(drawdown, 2),
+                "reason": "仓位偏高" if ratio >= float(risk_profile.get("heavyPosition") or 30) else "波动或回撤偏高",
+            })
+
+    position_count = len(items)
+    position_score = clamp_score(
+        100
+        - max(0, top_position_ratio - float(risk_profile.get("positionLimit") or 25)) * 1.55
+        - max(0, hhi - 0.16) * 155
     )
-    diversification_score = round(max(0, min(100, 100 - max(0, top_bucket["ratio"] - 25) * 1.1 - max(0, (top_holding or {}).get("positionRatio", 0) - 25) * 0.9)))
+    industry_score = clamp_score(100 - max(0, float(top_bucket["ratio"]) - 35) * 1.35 - max(0, industry_hhi - 0.35) * 95)
+    count_score = clamp_score(58 + min(position_count, 12) * 4 - max(0, position_count - 30) * 2.2)
+    volatility_score = clamp_score(100 - weighted_annual_volatility * 0.75 - weighted_day_volatility * 4.2 - high_volatility_weight * 0.45)
+    drawdown_score = clamp_score(100 - weighted_drawdown * 1.6 - loss_pressure_weight * 0.55 - (abs(float(data.get("totalGainRate") or 0)) * 0.45 if total_gain < 0 else 0))
+    liquidity_score = clamp_score(weighted_liquidity or 45)
+    data_confidence_score = clamp_score(weighted_data_quality or 35)
+    correlation_score = clamp_score(100 - max(0, float(top_bucket["ratio"]) - 30) * 1.05 - industry_hhi * 48)
+    diversification_score = clamp_score(position_score * 0.38 + industry_score * 0.34 + count_score * 0.16 + correlation_score * 0.12)
     max_drawdown_estimate = round(
-        min(45, weighted_day_volatility * 2.8 + max(0, top_bucket["ratio"] - 40) * 0.12 + max(0, float(data.get("totalGainRate") or 0) * -0.35)),
+        min(60, max(weighted_drawdown, weighted_day_volatility * 3.2 + max(0, float(top_bucket["ratio"]) - 35) * 0.11 + loss_pressure_weight * 0.08)),
         2,
     )
-    correlation_level = "高" if top_bucket["ratio"] >= 60 else "中" if top_bucket["ratio"] >= 40 else "低"
+    correlation_level = "高" if correlation_score < 55 else "中" if correlation_score < 72 else "低"
+    confidence_label = "高" if data_confidence_score >= 78 else "中" if data_confidence_score >= 58 else "低"
     actions = {action: 0 for action in ("buy", "sell", "adjust", "remove")}
     for transaction in transactions:
         action = transaction.get("action")
@@ -7029,6 +7248,12 @@ def portfolio_insights(snapshot: dict[str, Any] | None = None) -> dict[str, Any]
             "level": "start",
             "title": "先添加持仓",
             "text": "添加股票和成本后，系统才能生成组合建议。",
+        })
+    if top_position_ratio >= float(risk_profile.get("heavyPosition") or 30):
+        action_items.append({
+            "level": "risk",
+            "title": "单股仓位偏高",
+            "text": f"{top_holding['name']} 仓位 {top_position_ratio:.0f}%，已经超过你的{risk_profile.get('label', '当前')}风险边界。",
         })
     if top_bucket["ratio"] >= 60:
         action_items.append({
@@ -7042,11 +7267,23 @@ def portfolio_insights(snapshot: dict[str, Any] | None = None) -> dict[str, Any]
             "title": "关注分类集中度",
             "text": f"{top_bucket['name']} 是第一大分类，占比 {top_bucket['ratio']:.0f}%，加仓前先看其他方向。",
         })
-    if top_holding and float(top_holding.get("positionRatio") or 0) >= 40:
+    if top_holding and float(top_holding.get("positionRatio") or 0) >= 40 and top_position_ratio < float(risk_profile.get("heavyPosition") or 30):
         action_items.append({
             "level": "risk",
             "title": "单只股票影响较大",
             "text": f"{top_holding['name']} 仓位 {top_holding['positionRatio']:.0f}%，它会明显影响组合体验。",
+        })
+    if high_volatility_weight >= 25:
+        action_items.append({
+            "level": "risk",
+            "title": "波动仓位偏多",
+            "text": f"高波动持仓约占 {high_volatility_weight:.0f}%，需要避免在同一天集中加仓。",
+        })
+    if weak_data_weight >= 35:
+        action_items.append({
+            "level": "watch",
+            "title": "数据置信度偏低",
+            "text": f"约 {weak_data_weight:.0f}% 的仓位缺少完整行情或历史数据，风险评分需要保守看待。",
         })
     if weak_holding and float(weak_holding.get("totalGainRate") or 0) <= -8:
         action_items.append({
@@ -7061,14 +7298,62 @@ def portfolio_insights(snapshot: dict[str, Any] | None = None) -> dict[str, Any]
             "text": "当前没有明显单点风险，继续跟踪趋势、公告和仓位变化。",
         })
 
-    risk_score = 100
-    risk_score -= max(0, top_bucket["ratio"] - 35) * 0.8
-    if top_holding:
-        risk_score -= max(0, float(top_holding.get("positionRatio") or 0) - 30) * 0.7
-    risk_score -= max_drawdown_estimate * 0.35
-    if total_gain < 0:
-        risk_score -= min(18, abs(float(data.get("totalGainRate") or 0)) * 0.8)
-    risk_score = round(max(35, min(95, risk_score)))
+    factors = [
+        {
+            "id": "position",
+            "name": "单股集中度",
+            "score": position_score,
+            "weight": 0.22,
+            "text": f"最大持仓 {top_position_ratio:.0f}%，有效持仓数约 {effective_positions}。",
+        },
+        {
+            "id": "industry",
+            "name": "行业集中度",
+            "score": industry_score,
+            "weight": 0.2,
+            "text": f"{top_bucket['name']} 占比 {top_bucket['ratio']:.0f}%，行业 HHI {industry_hhi:.2f}。",
+        },
+        {
+            "id": "volatility",
+            "name": "波动风险",
+            "score": volatility_score,
+            "weight": 0.18,
+            "text": f"加权年化波动约 {weighted_annual_volatility:.1f}%，高波动仓位 {high_volatility_weight:.0f}%。",
+        },
+        {
+            "id": "drawdown",
+            "name": "回撤压力",
+            "score": drawdown_score,
+            "weight": 0.16,
+            "text": f"加权历史回撤约 {weighted_drawdown:.1f}%，浮亏压力仓位 {loss_pressure_weight:.0f}%。",
+        },
+        {
+            "id": "liquidity",
+            "name": "流动性",
+            "score": liquidity_score,
+            "weight": 0.1,
+            "text": "成交额越低，实际调仓难度越高。",
+        },
+        {
+            "id": "data",
+            "name": "数据置信度",
+            "score": data_confidence_score,
+            "weight": 0.1,
+            "text": f"当前组合数据置信度为{confidence_label}，弱数据仓位 {weak_data_weight:.0f}%。",
+        },
+        {
+            "id": "count",
+            "name": "持仓数量",
+            "score": count_score,
+            "weight": 0.04,
+            "text": f"当前 {position_count} 只持仓，过少会集中，过多会难管理。",
+        },
+    ]
+    risk_score = clamp_score(sum(float(item["score"]) * float(item["weight"]) for item in factors))
+    if position_count == 0:
+        risk_score = 0
+    elif data_confidence_score < 50:
+        risk_score = min(risk_score, 72)
     if risk_score >= 78:
         risk_label = "结构健康"
     elif risk_score >= 60:
@@ -7104,11 +7389,23 @@ def portfolio_insights(snapshot: dict[str, Any] | None = None) -> dict[str, Any]
             "latest": transactions[:5],
         },
         "riskEngine": {
-            "version": "portfolio-risk-v2",
+            "version": "portfolio-risk-v2.1-free-data",
             "diversificationScore": diversification_score,
             "estimatedMaxDrawdown": max_drawdown_estimate,
             "weightedDayVolatility": round(weighted_day_volatility, 2),
+            "weightedAnnualVolatility": round(weighted_annual_volatility, 2),
+            "weightedHistoricalDrawdown": round(weighted_drawdown, 2),
             "correlationLevel": correlation_level,
+            "hhi": hhi,
+            "industryHhi": industry_hhi,
+            "effectivePositions": effective_positions,
+            "dataConfidence": {
+                "score": data_confidence_score,
+                "label": confidence_label,
+                "weakDataWeight": round(weak_data_weight, 2),
+            },
+            "factorScores": factors,
+            "highRiskPositions": high_risk_positions[:5],
             "profitContribution": {
                 "largestProfit": {
                     "code": largest_profit.get("code"),
@@ -7122,9 +7419,9 @@ def portfolio_insights(snapshot: dict[str, Any] | None = None) -> dict[str, Any]
                 } if largest_loss else None,
             },
             "notes": [
-                f"当前相关性风险为{correlation_level}，主要由{top_bucket['name']}占比决定。",
-                f"估算最大回撤约 {max_drawdown_estimate}%，用于提醒仓位压力，不代表真实最大亏损。",
-                f"分散度评分 {diversification_score}，越高代表行业和单股暴露越均衡。",
+                f"组合风险评分由单股集中度、行业集中度、波动、回撤、流动性和数据置信度共同计算。",
+                f"当前相关性风险为{correlation_level}，最大行业为{top_bucket['name']}，占比 {top_bucket['ratio']:.0f}%。",
+                f"估算回撤约 {max_drawdown_estimate}%，数据置信度{confidence_label}，该值用于提醒仓位压力，不代表真实最大亏损。",
             ],
         },
         "actionItems": action_items[:4],

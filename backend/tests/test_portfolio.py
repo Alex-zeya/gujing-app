@@ -357,9 +357,25 @@ class PortfolioFlowTest(unittest.TestCase):
         self.assertIn("transactionStats", insights)
         self.assertGreaterEqual(insights["transactionStats"]["actions"]["buy"], 1)
         self.assertIn("riskEngine", insights)
+        self.assertEqual(insights["riskEngine"]["version"], "portfolio-risk-v2.1-free-data")
         self.assertIn("diversificationScore", insights["riskEngine"])
         self.assertIn("estimatedMaxDrawdown", insights["riskEngine"])
+        self.assertIn("factorScores", insights["riskEngine"])
+        self.assertIn("dataConfidence", insights["riskEngine"])
+        self.assertIn("effectivePositions", insights["riskEngine"])
+        self.assertTrue(insights["riskEngine"]["factorScores"])
         self.assertTrue(insights["actionItems"])
+
+    def test_data_status_exposes_free_source_capabilities(self):
+        status = self.backend.data_status_show()
+
+        self.assertIn("dataStrategy", status)
+        self.assertEqual(status["dataStrategy"]["mode"], "free-first")
+        self.assertIn("sourceCapabilities", status)
+        self.assertTrue(any(source["id"] == "free_fundamentals" for source in status["sourceCapabilities"]))
+        self.assertIn("coverageSummary", status)
+        self.assertIn("quote", status["coverageSummary"])
+        self.assertIn("history", status["coverageSummary"])
 
     def test_search_supports_pinyin_initials(self):
         matches = self.backend.search_stocks("payh")

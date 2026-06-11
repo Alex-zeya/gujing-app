@@ -3529,12 +3529,45 @@ function PortfolioView({
               <span>相关性</span>
               <strong>{riskEngine.correlationLevel}</strong>
             </div>
+            <div>
+              <span>年化波动</span>
+              <strong>{riskEngine.weightedAnnualVolatility ?? 0}%</strong>
+            </div>
+            <div>
+              <span>有效持仓</span>
+              <strong>{riskEngine.effectivePositions ?? 0}</strong>
+            </div>
+            <div>
+              <span>数据置信度</span>
+              <strong>{riskEngine.dataConfidence?.label ?? '待同步'}</strong>
+            </div>
           </div>
           <div className="risk-engine-notes">
             {riskEngine.notes?.slice(0, 3).map((note) => (
               <p key={note}>{note}</p>
             ))}
           </div>
+          {riskEngine.factorScores?.length > 0 && (
+            <div className="risk-factor-list">
+              {riskEngine.factorScores.map((factor) => (
+                <div key={factor.id}>
+                  <span>{factor.name}</span>
+                  <strong>{factor.score}</strong>
+                  <p>{factor.text}</p>
+                </div>
+              ))}
+            </div>
+          )}
+          {riskEngine.highRiskPositions?.length > 0 && (
+            <div className="high-risk-position-list">
+              <strong>优先检查</strong>
+              {riskEngine.highRiskPositions.map((item) => (
+                <p key={`${item.code}-${item.reason}`}>
+                  {item.name} {item.positionRatio}%：{item.reason}
+                </p>
+              ))}
+            </div>
+          )}
         </details>
       )}
 
@@ -4762,6 +4795,33 @@ function WatchView({
                 股票目录：{dataStatus.stockDirectory.count ?? 0} 只
                 {dataStatus.stockDirectory.mode === 'live' ? '，已接入全量名称库' : '，等待后台同步'}
               </p>
+            )}
+            {dataStatus?.coverageSummary && (
+              <div className="coverage-metrics">
+                <div>
+                  <span>行情</span>
+                  <strong>{dataStatus.coverageSummary.quote?.ratio ?? 0}%</strong>
+                </div>
+                <div>
+                  <span>K线</span>
+                  <strong>{dataStatus.coverageSummary.history?.ratio ?? 0}%</strong>
+                </div>
+                <div>
+                  <span>基本面</span>
+                  <strong>{dataStatus.coverageSummary.fundamental?.ratio ?? 0}%</strong>
+                </div>
+              </div>
+            )}
+            {dataStatus?.sourceCapabilities?.length > 0 && (
+              <div className="data-capability-list">
+                {dataStatus.sourceCapabilities.slice(0, 4).map((source) => (
+                  <div key={source.id}>
+                    <span>{source.name}</span>
+                    <strong>{source.status}</strong>
+                    <p>{source.text}</p>
+                  </div>
+                ))}
+              </div>
             )}
             {dataStatus?.lastRefresh && <em>最近刷新：{dataStatus.lastRefresh}</em>}
             <button type="button" onClick={refreshMarketData} disabled={isRefreshingData}>
