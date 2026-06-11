@@ -383,6 +383,14 @@
   font-weight: 750;
 }
 
+.search-notice {
+  margin: 8px 2px 0;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
 .suggestion-panel {
   position: absolute;
   z-index: 20;

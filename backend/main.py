@@ -214,6 +214,31 @@ STOCKS: dict[str, dict[str, Any]] = {
     },
 }
 
+A_STOCK_SEARCH_SEEDS: list[dict[str, str]] = [
+    {"code": "601727", "name": "上海电气", "industry": "电气设备"},
+    {"code": "600875", "name": "东方电气", "industry": "电气设备"},
+    {"code": "688660", "name": "电气风电", "industry": "风电设备"},
+    {"code": "600312", "name": "平高电气", "industry": "电网设备"},
+    {"code": "000400", "name": "许继电气", "industry": "电网设备"},
+    {"code": "002028", "name": "思源电气", "industry": "电网设备"},
+    {"code": "300001", "name": "特锐德", "industry": "电气设备"},
+    {"code": "300274", "name": "阳光电源", "industry": "电源设备"},
+    {"code": "601179", "name": "中国西电", "industry": "电网设备"},
+    {"code": "600406", "name": "国电南瑞", "industry": "电网自动化"},
+    {"code": "601012", "name": "隆基绿能", "industry": "光伏设备"},
+    {"code": "600089", "name": "特变电工", "industry": "电力设备"},
+    {"code": "300124", "name": "汇川技术", "industry": "工业自动化"},
+    {"code": "002202", "name": "金风科技", "industry": "风电设备"},
+    {"code": "002129", "name": "TCL中环", "industry": "光伏设备"},
+    {"code": "600438", "name": "通威股份", "industry": "光伏设备"},
+    {"code": "601877", "name": "正泰电器", "industry": "低压电器"},
+    {"code": "002074", "name": "国轩高科", "industry": "动力电池"},
+    {"code": "002594", "name": "比亚迪", "industry": "新能源汽车"},
+    {"code": "601857", "name": "中国石油", "industry": "石油石化"},
+]
+
+STOCK_DIRECTORY_CACHE: dict[str, Any] = {"loadedAt": 0.0, "items": A_STOCK_SEARCH_SEEDS}
+
 
 MARKET_OVERVIEW = {
     "market": "cn",
@@ -897,6 +922,110 @@ def list_curated_stocks() -> list[dict[str, Any]]:
     curated_codes = ["600519", "300750", "000001"]
     stocks_by_code = {stock["code"]: stock for stock in list_stocks()}
     return [stocks_by_code[code] for code in curated_codes if code in stocks_by_code]
+
+
+def build_stock_from_directory(code: str, name: str, industry: str = "A股") -> dict[str, Any]:
+    clean = clean_code(code)
+    seed = STOCKS.get(clean)
+    if seed:
+        return seed
+    base_price = 0
+    return {
+        "code": clean,
+        "name": name,
+        "market": "cn",
+        "industry": industry or "A股",
+        "price": price_to_text(base_price),
+        "change": "0.00%",
+        "performance": {"day": 0, "week": 0, "month": 0},
+        "sparkline": [42, 42, 43, 42, 44, 43, 45, 44, 45, 46],
+        "chart": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        "tone": "neutral",
+        "pulse": "已找到股票名称，正在等待行情和历史 K 线补充。",
+        "updated": "待同步",
+        "score": 58,
+        "tags": [industry or "A股", "待同步"],
+        "idea": {
+            "stance": "先观察",
+            "horizon": "短中期",
+            "reason": "已从股票名称目录匹配，后续会补充实时价格、K线和行业信息。",
+            "risk": "行情和历史数据尚未完整同步，暂不适合直接做持仓判断。",
+            "trigger": "行情同步完成后再查看趋势、估值和风险提示。",
+        },
+        "metrics": [["状态", "待同步", "行情"], ["分类", industry or "A股", "目录"], ["数据源", "股票名称表", "搜索"]],
+        "signals": [
+            {"title": "搜索", "level": "已匹配", "text": "企业名称和股票代码已识别。"},
+            {"title": "行情", "level": "待同步", "text": "正在等待公开行情源返回价格。"},
+            {"title": "分析", "level": "待补充", "text": "需要 K线、成交额和行业数据后再给出更具体建议。"},
+        ],
+        "checklist": ["同步实时价格", "补充历史 K线", "查看行业和公告变化"],
+        "dataCoverage": {"quote": False, "history": False, "fundamental": False},
+    }
+
+
+def stock_directory_items(max_age_minutes: int = 24 * 60) -> list[dict[str, str]]:
+    loaded_at = float(STOCK_DIRECTORY_CACHE.get("loadedAt") or 0)
+    if STOCK_DIRECTORY_CACHE.get("items") and time.time() - loaded_at < max_age_minutes * 60:
+        return STOCK_DIRECTORY_CACHE["items"]
+    items = list(A_STOCK_SEARCH_SEEDS)
+    try:
+        import akshare as ak
+
+        frame = ak.stock_info_a_code_name()
+        code_column = "code" if "code" in frame.columns else "代码"
+        name_column = "name" if "name" in frame.columns else "名称"
+        for _, row in frame.iterrows():
+            code = clean_code(str(row.get(code_column, "")))
+            name = str(row.get(name_column, "")).strip()
+            if len(code) == 6 and name:
+                items.append({"code": code, "name": name, "industry": "A股"})
+    except Exception:
+        pass
+    deduped = list({item["code"]: item for item in items if item.get("code") and item.get("name")}.values())
+    STOCK_DIRECTORY_CACHE.update({"loadedAt": time.time(), "items": deduped})
+    return deduped
+
+
+def directory_matches(keyword: str, limit: int = 25) -> list[dict[str, Any]]:
+    raw_term = keyword.strip()
+    if len(raw_term) < 2 and not clean_code(raw_term):
+        return []
+    normalized_term = raw_term.lower()
+    code_term = clean_code(raw_term)
+    scored_matches: list[tuple[float, dict[str, Any]]] = []
+    for item in stock_directory_items():
+        code = clean_code(item["code"])
+        name = item["name"].strip()
+        industry = item.get("industry", "A股")
+        name_lower = name.lower()
+        industry_lower = industry.lower()
+        initials = pinyin_initials(name)
+        score = 0
+        if code_term and code.startswith(code_term):
+            score += 120
+        elif code_term and code_term in code:
+            score += 80
+        if normalized_term == name_lower:
+            score += 110
+        elif name_lower.startswith(normalized_term):
+            score += 92
+        elif normalized_term in name_lower:
+            score += 78
+        if normalized_term and initials.startswith(normalized_term):
+            score += 70
+        elif normalized_term and normalized_term in initials:
+            score += 48
+        if normalized_term in industry_lower:
+            score += 30
+        if not score:
+            continue
+        try:
+            stock = get_stock_or_404(code)
+        except HTTPException:
+            stock = build_stock_from_directory(code, name, industry)
+            upsert_stock(stock)
+        scored_matches.append((score + float(stock.get("score", 0)) / 100, stock))
+    return [stock for _, stock in sorted(scored_matches, key=lambda item: item[0], reverse=True)[:limit]]
 
 
 def save_data_status(status: dict[str, Any]) -> dict[str, Any]:
@@ -3179,6 +3308,9 @@ def search_stocks(keyword: str) -> list[dict[str, Any]]:
             scored_matches.append((score + float(stock.get("score", 0)) / 100, stock))
 
     matches = [stock for _, stock in sorted(scored_matches, key=lambda item: item[0], reverse=True)]
+    if len(matches) < 10:
+        existing_codes = {stock["code"] for stock in matches}
+        matches.extend(stock for stock in directory_matches(raw_term, 25) if stock["code"] not in existing_codes)
     return [apply_snapshot_history(stock) for stock in matches[:25]]
 
 

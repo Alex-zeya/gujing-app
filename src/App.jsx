@@ -171,6 +171,24 @@ let stocks = {
   },
 }
 
+const searchSeedStocks = stockListToMap([
+  { code: '601727', name: '上海电气', market: 'cn', industry: '电气设备' },
+  { code: '600875', name: '东方电气', market: 'cn', industry: '电气设备' },
+  { code: '688660', name: '电气风电', market: 'cn', industry: '风电设备' },
+  { code: '600312', name: '平高电气', market: 'cn', industry: '电网设备' },
+  { code: '000400', name: '许继电气', market: 'cn', industry: '电网设备' },
+  { code: '002028', name: '思源电气', market: 'cn', industry: '电网设备' },
+  { code: '601877', name: '正泰电器', market: 'cn', industry: '低压电器' },
+  { code: '300274', name: '阳光电源', market: 'cn', industry: '电源设备' },
+  { code: '600406', name: '国电南瑞', market: 'cn', industry: '电网自动化' },
+  { code: '600089', name: '特变电工', market: 'cn', industry: '电力设备' },
+  { code: '601012', name: '隆基绿能', market: 'cn', industry: '光伏设备' },
+  { code: '300124', name: '汇川技术', market: 'cn', industry: '工业自动化' },
+  { code: '601857', name: '中国石油', market: 'cn', industry: '石油石化' },
+].map((stock, index) => createSearchSeedStock(stock, index)))
+
+stocks = { ...stocks, ...searchSeedStocks }
+
 const defaultPortfolio = [
   { code: '600519', name: '贵州茅台', amount: 42000, industry: '白酒' },
   { code: '300750', name: '宁德时代', amount: 26000, industry: '动力电池' },
@@ -385,6 +403,38 @@ function stockListToMap(list) {
     acc[stock.code] = stock
     return acc
   }, {})
+}
+
+function createSearchSeedStock(stock, index = 0) {
+  const base = Number((58 + (index % 5) * 2).toFixed(2))
+  return {
+    ...stock,
+    price: stock.price ?? '0.00',
+    change: stock.change ?? '0.00%',
+    performance: stock.performance ?? { day: 0, week: 0, month: 0 },
+    sparkline: stock.sparkline ?? [42, 42, 43, 42, 44, 43, 45, 44, 45, 46],
+    chart: stock.chart ?? [base, base, base, base, base, base, base, base, base, base],
+    tone: stock.tone ?? 'neutral',
+    pulse: stock.pulse ?? '已匹配企业名称，点击后会补充行情和K线。',
+    updated: stock.updated ?? '待同步',
+    score: stock.score ?? 58,
+    tags: stock.tags ?? [stock.industry, '名称匹配'],
+    idea: stock.idea ?? {
+      stance: '先观察',
+      horizon: '短中期',
+      reason: '已从股票名称目录匹配，等待行情和历史走势补充。',
+      risk: '当前数据未完整同步，先不要只凭名称判断持仓。',
+      trigger: '行情同步后再查看趋势、价格和系统建议。',
+    },
+    metrics: stock.metrics ?? [['状态', '待同步', '行情'], ['分类', stock.industry, '目录'], ['数据源', '名称目录', '搜索']],
+    signals: stock.signals ?? [
+      { title: '搜索', level: '已匹配', text: '企业名称与关键词匹配。' },
+      { title: '行情', level: '待同步', text: '点击分析后会尝试补充实时价格。' },
+      { title: '风险', level: '需观察', text: '需要结合K线、成交额和行业变化再判断。' },
+    ],
+    checklist: stock.checklist ?? ['同步实时价格', '补充历史K线', '查看行业和公告变化'],
+    dataCoverage: stock.dataCoverage ?? { quote: false, history: false, fundamental: false },
+  }
 }
 
 function portfolioSnapshotToItems(snapshot) {
@@ -746,6 +796,7 @@ function App() {
   const [searchSuggestions, setSearchSuggestions] = useState([])
   const [isSuggesting, setIsSuggesting] = useState(false)
   const [isSearchFocused, setIsSearchFocused] = useState(false)
+  const [searchNotice, setSearchNotice] = useState('')
   const [marketOverview, setMarketOverview] = useState(marketOverviews.cn)
   const [portfolio, setPortfolio] = useState(defaultPortfolio)
   const [portfolioInsights, setPortfolioInsights] = useState(null)
@@ -1086,16 +1137,38 @@ function App() {
   async function runSearch(event) {
     event.preventDefault()
     const displayQuery = query.trim()
-    const stock = findStockByQuery(query)
+    if (!displayQuery) {
+      setSearchNotice('先输入股票代码、企业名称或关键词。')
+      setHasAnalyzed(false)
+      return
+    }
+
+    setSearchNotice('')
+    const localMatches = localStockSuggestions(displayQuery, stockCatalogRef.current, 8)
+    const stock = findStockByQuery(displayQuery, stockCatalogRef.current)
     if (stock) {
       selectStockForAnalysis(stock, displayQuery || stock.name)
       return
     }
 
     try {
+      setIsSuggesting(true)
       const results = await apiJson(`/api/stocks/search?keyword=${encodeURIComponent(query.trim())}`)
-      const matchedStock = results.find((item) => item.market === 'cn')
-      if (matchedStock) {
+      const cnResults = results.filter((item) => item.market === 'cn')
+      const mergedResults = mergeStockLists(localMatches, cnResults, 8)
+      if (mergedResults.length > 1) {
+        setStockCatalog((current) => ({
+          ...current,
+          ...stockListToMap(mergedResults),
+        }))
+        setSearchSuggestions(mergedResults)
+        setIsSearchFocused(true)
+        setSearchNotice(`找到 ${mergedResults.length} 只相关股票，点企业名称进入分析。`)
+        setApiStatus('connected')
+        return
+      }
+      if (mergedResults.length === 1) {
+        const matchedStock = mergedResults[0]
         setStockCatalog((current) => ({
           ...current,
           [matchedStock.code]: matchedStock,
@@ -1106,13 +1179,23 @@ function App() {
       }
     } catch {
       setApiStatus('offline')
+      if (localMatches.length) {
+        setSearchSuggestions(localMatches)
+        setIsSearchFocused(true)
+        setSearchNotice(`网络暂时较慢，先显示 ${localMatches.length} 只本地匹配股票。`)
+        return
+      }
+    } finally {
+      setIsSuggesting(false)
     }
 
+    setSearchNotice('暂时没有找到匹配股票，可以换企业全称或股票代码。')
     setHasAnalyzed(false)
   }
 
   function updateSearchQuery(value) {
     setQuery(value)
+    setSearchNotice('')
     const keyword = value.trim()
     if (!keyword) {
       setSearchSuggestions([])
@@ -1743,6 +1826,7 @@ function App() {
             runSearch={runSearch}
             searchSuggestions={searchSuggestions}
             isSuggesting={isSuggesting}
+            searchNotice={searchNotice}
             isSearchFocused={isSearchFocused}
             setIsSearchFocused={setIsSearchFocused}
             selectStockForAnalysis={selectStockForAnalysis}
@@ -2536,6 +2620,7 @@ function DiscoverView({
   runSearch,
   searchSuggestions,
   isSuggesting,
+  searchNotice,
   isSearchFocused,
   setIsSearchFocused,
   selectStockForAnalysis,
@@ -2719,6 +2804,7 @@ function DiscoverView({
           />
           <button type="submit">分析</button>
         </div>
+        {searchNotice && <p className="search-notice">{searchNotice}</p>}
         {showSuggestions && (
           <div className="suggestion-panel" role="listbox" aria-label="股票搜索建议">
             <div className="suggestion-panel__head">

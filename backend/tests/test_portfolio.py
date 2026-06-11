@@ -366,6 +366,12 @@ class PortfolioFlowTest(unittest.TestCase):
         self.assertTrue(matches)
         self.assertEqual(matches[0]["code"], "000001")
 
+    def test_search_supports_company_keyword_directory(self):
+        matches = self.backend.search_stocks("电气")
+        names = [stock["name"] for stock in matches]
+        self.assertTrue(any("电气" in name for name in names))
+        self.assertIn("上海电气", names)
+
     def test_user_export_contains_portfolio_records(self):
         self.backend.portfolio_upsert(
             self.backend.PortfolioPayload(
