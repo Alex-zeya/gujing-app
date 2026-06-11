@@ -928,7 +928,11 @@ function App() {
         ])
 
         if (!isMounted) return
-        setStockCatalog(stockListToMap([...stockList, ...recommendations]))
+        setStockCatalog((current) => ({
+          ...searchSeedStocks,
+          ...current,
+          ...stockListToMap([...stockList, ...recommendations]),
+        }))
         setRecommendedStocks(recommendations)
         setMarketOverview(overview)
         setWatchlist(watchItems.map((stock) => stock.code))
@@ -1662,7 +1666,11 @@ function App() {
         apiJson('/api/user/summary'),
         apiJson('/api/system/readiness'),
       ])
-      setStockCatalog(stockListToMap([...stockList, ...recommendations]))
+      setStockCatalog((current) => ({
+        ...searchSeedStocks,
+        ...current,
+        ...stockListToMap([...stockList, ...recommendations]),
+      }))
       setRecommendedStocks(recommendations)
       setMarketOverview(overview)
       setPortfolio(portfolioSnapshotToItems(portfolioSnapshot))

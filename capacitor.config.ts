@@ -9,7 +9,7 @@ const config: CapacitorConfig = {
     iosScheme: 'gujing',
   },
   ios: {
-    contentInset: 'automatic',
+    contentInset: 'never',
   },
 }
 

@@ -1,11 +1,12 @@
 .app-shell {
   width: min(100%, 430px);
-  height: 100svh;
+  height: 100dvh;
+  min-height: 100svh;
   margin: 0 auto;
   background: var(--bg);
   color: var(--ink);
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   position: relative;
   overflow: hidden;
   border-inline: 1px solid var(--border);
@@ -15,8 +16,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: calc(8px + env(safe-area-inset-top)) 16px 10px;
-  flex: 0 0 auto;
+  min-height: calc(64px + env(safe-area-inset-top));
+  padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
   position: relative;
   z-index: 35;
   border-bottom: 1px solid var(--border);
@@ -106,14 +107,13 @@
 }
 
 .screen {
-  flex: 1 1 auto;
   min-height: 0;
   position: relative;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
   scrollbar-width: none;
-  padding: 10px 13px calc(88px + env(safe-area-inset-bottom));
+  padding: 12px 13px 14px;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -4509,18 +4509,13 @@
 }
 
 .tabbar {
-  position: fixed;
   z-index: 30;
-  left: 50%;
-  bottom: 0;
-  width: min(100%, 430px);
-  transform: translateX(-50%);
+  width: 100%;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 4px;
   padding: 8px 14px calc(8px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--border);
-  border-inline: 1px solid var(--border);
   background: oklch(1 0 0 / 0.96);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -4582,7 +4577,6 @@ button:active {
   }
 
   .tabbar {
-    bottom: 16px;
     border-radius: 0 0 18px 18px;
   }
 }

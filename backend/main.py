@@ -963,37 +963,42 @@ def build_stock_from_directory(code: str, name: str, industry: str = "A股") -> 
     }
 
 
-def stock_directory_items(max_age_minutes: int = 24 * 60) -> list[dict[str, str]]:
+def stock_directory_items(max_age_minutes: int = 24 * 60, allow_network: bool = True) -> list[dict[str, str]]:
     loaded_at = float(STOCK_DIRECTORY_CACHE.get("loadedAt") or 0)
-    if STOCK_DIRECTORY_CACHE.get("items") and time.time() - loaded_at < max_age_minutes * 60:
+    is_fresh = time.time() - loaded_at < max_age_minutes * 60
+    is_full_directory = bool(STOCK_DIRECTORY_CACHE.get("fullLoaded"))
+    if STOCK_DIRECTORY_CACHE.get("items") and is_fresh and (is_full_directory or not allow_network):
         return STOCK_DIRECTORY_CACHE["items"]
     items = list(A_STOCK_SEARCH_SEEDS)
-    try:
-        import akshare as ak
+    full_loaded = False
+    if allow_network:
+        try:
+            import akshare as ak
 
-        frame = ak.stock_info_a_code_name()
-        code_column = "code" if "code" in frame.columns else "代码"
-        name_column = "name" if "name" in frame.columns else "名称"
-        for _, row in frame.iterrows():
-            code = clean_code(str(row.get(code_column, "")))
-            name = str(row.get(name_column, "")).strip()
-            if len(code) == 6 and name:
-                items.append({"code": code, "name": name, "industry": "A股"})
-    except Exception:
-        pass
+            frame = ak.stock_info_a_code_name()
+            code_column = "code" if "code" in frame.columns else "代码"
+            name_column = "name" if "name" in frame.columns else "名称"
+            for _, row in frame.iterrows():
+                code = clean_code(str(row.get(code_column, "")))
+                name = str(row.get(name_column, "")).strip()
+                if len(code) == 6 and name:
+                    items.append({"code": code, "name": name, "industry": "A股"})
+            full_loaded = True
+        except Exception:
+            pass
     deduped = list({item["code"]: item for item in items if item.get("code") and item.get("name")}.values())
-    STOCK_DIRECTORY_CACHE.update({"loadedAt": time.time(), "items": deduped})
+    STOCK_DIRECTORY_CACHE.update({"loadedAt": time.time(), "items": deduped, "fullLoaded": full_loaded})
     return deduped
 
 
-def directory_matches(keyword: str, limit: int = 25) -> list[dict[str, Any]]:
+def directory_matches(keyword: str, limit: int = 25, allow_network: bool = False) -> list[dict[str, Any]]:
     raw_term = keyword.strip()
     if len(raw_term) < 2 and not clean_code(raw_term):
         return []
     normalized_term = raw_term.lower()
     code_term = clean_code(raw_term)
     scored_matches: list[tuple[float, dict[str, Any]]] = []
-    for item in stock_directory_items():
+    for item in stock_directory_items(allow_network=allow_network):
         code = clean_code(item["code"])
         name = item["name"].strip()
         industry = item.get("industry", "A股")
@@ -4348,18 +4353,63 @@ def stocks_index() -> list[dict[str, Any]]:
     return [apply_analysis_score(stock) for stock in list_curated_stocks()]
 
 
+def search_result_summary(stock: dict[str, Any]) -> dict[str, Any]:
+    performance = stock.get("performance") or {}
+    quote = stock.get("quote") or {}
+    quote_stats = stock.get("quoteStats") or {}
+    price = stock.get("price") or quote.get("now") or quote.get("price") or 0
+    change = stock.get("change") or quote.get("change") or "0.00%"
+    return {
+        "code": stock.get("code"),
+        "name": stock.get("name"),
+        "market": stock.get("market", "cn"),
+        "industry": stock.get("industry", "A股"),
+        "price": str(price),
+        "change": str(change),
+        "performance": {
+            "day": float(performance.get("day") or 0),
+            "week": float(performance.get("week") or 0),
+            "month": float(performance.get("month") or 0),
+        },
+        "sparkline": stock.get("sparkline") or [42, 43, 42, 44, 43, 45, 46],
+        "chart": stock.get("chart") or stock.get("sparkline") or [42, 43, 42, 44, 43, 45, 46],
+        "tone": stock.get("tone", "neutral"),
+        "score": stock.get("score", 55),
+        "tags": stock.get("tags", ["A股"]),
+        "quoteStats": {
+            "open": quote_stats.get("open"),
+            "previousClose": quote_stats.get("previousClose"),
+            "dayHigh": quote_stats.get("dayHigh"),
+            "dayLow": quote_stats.get("dayLow"),
+            "marketCap": quote_stats.get("marketCap"),
+            "source": quote_stats.get("source") or quote.get("source"),
+        },
+        "updated": stock.get("updated") or stock.get("cache", {}).get("quoteRefreshedAt") or "待同步",
+    }
+
+
 @app.get("/api/stocks/search")
-def stocks_search(keyword: str = "") -> list[dict[str, Any]]:
+def stocks_search(keyword: str = "", full: bool = False, with_quotes: bool = False) -> list[dict[str, Any]]:
     results = search_stocks(keyword)
+    if keyword.strip() and not results:
+        existing_codes = {stock["code"] for stock in results}
+        try:
+            results.extend(
+                stock for stock in directory_matches(keyword, 25, allow_network=True) if stock["code"] not in existing_codes
+            )
+        except Exception:
+            pass
     if not results and keyword.strip():
         try:
             sync_market_universe()
             results = search_stocks(keyword)
         except Exception:
             results = []
-    if results:
+    if with_quotes and results:
         refresh_cached_quotes([stock["code"] for stock in results[:8]])
         results = [get_stock_or_404(stock["code"]) for stock in results[:25]]
+    if not full:
+        return [search_result_summary(stock) for stock in results[:25]]
     return [apply_analysis_score(stock) for stock in results[:25]]
 
 
