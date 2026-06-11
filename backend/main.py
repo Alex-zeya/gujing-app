@@ -1122,9 +1122,9 @@ def build_stock_from_directory(code: str, name: str, industry: str = "A股") -> 
         "chart": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         "tone": "neutral",
         "pulse": "已找到股票名称，正在等待行情和历史 K 线补充。",
-        "updated": "待同步",
+        "updated": "等待行情",
         "score": 58,
-        "tags": [industry or "A股", "待同步"],
+        "tags": [industry or "A股", "等待行情"],
         "idea": {
             "stance": "先观察",
             "horizon": "短中期",
@@ -1132,10 +1132,10 @@ def build_stock_from_directory(code: str, name: str, industry: str = "A股") -> 
             "risk": "行情和历史数据尚未完整同步，暂不适合直接做持仓判断。",
             "trigger": "行情同步完成后再查看趋势、估值和风险提示。",
         },
-        "metrics": [["状态", "待同步", "行情"], ["分类", industry or "A股", "目录"], ["数据源", "股票名称表", "搜索"]],
+        "metrics": [["状态", "等待行情", "行情"], ["分类", industry or "A股", "目录"], ["数据源", "股票名称表", "搜索"]],
         "signals": [
             {"title": "搜索", "level": "已匹配", "text": "企业名称和股票代码已识别。"},
-            {"title": "行情", "level": "待同步", "text": "正在等待公开行情源返回价格。"},
+            {"title": "行情", "level": "等待行情", "text": "正在等待公开行情源返回价格。"},
             {"title": "分析", "level": "持续跟踪", "text": "系统会结合 K线、成交额和行业数据继续完善判断。"},
         ],
         "checklist": ["同步实时价格", "补充历史 K线", "查看行业和公告变化"],
@@ -5921,7 +5921,7 @@ def search_result_summary(stock: dict[str, Any]) -> dict[str, Any]:
             "fundamentalSource": quote_stats.get("fundamentalSource"),
             "source": quote_stats.get("source") or quote.get("source"),
         },
-        "updated": stock.get("updated") or stock.get("cache", {}).get("quoteRefreshedAt") or "待同步",
+        "updated": stock.get("updated") or stock.get("cache", {}).get("quoteRefreshedAt") or "等待行情",
     }
 
 

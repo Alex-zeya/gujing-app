@@ -440,7 +440,7 @@ function createSearchSeedStock(stock, index = 0) {
     chart: stock.chart ?? [base, base, base, base, base, base, base, base, base, base],
     tone: stock.tone ?? 'neutral',
     pulse: stock.pulse ?? '已匹配企业名称，点击后会补充行情和K线。',
-    updated: stock.updated ?? '待同步',
+    updated: stock.updated ?? '等待行情',
     score: stock.score ?? 58,
     tags: stock.tags ?? [stock.industry, '名称匹配'],
     idea: stock.idea ?? {
@@ -450,10 +450,10 @@ function createSearchSeedStock(stock, index = 0) {
       risk: '当前数据未完整同步，先不要只凭名称判断持仓。',
       trigger: '行情同步后再查看趋势、价格和系统建议。',
     },
-    metrics: stock.metrics ?? [['状态', '待同步', '行情'], ['分类', stock.industry, '目录'], ['数据源', '名称目录', '搜索']],
+    metrics: stock.metrics ?? [['状态', '等待行情', '行情'], ['分类', stock.industry, '目录'], ['数据源', '名称目录', '搜索']],
     signals: stock.signals ?? [
       { title: '搜索', level: '已匹配', text: '企业名称与关键词匹配。' },
-      { title: '行情', level: '待同步', text: '点击分析后会尝试补充实时价格。' },
+      { title: '行情', level: '等待行情', text: '点击分析后会尝试补充实时价格。' },
       { title: '风险', level: '需观察', text: '需要结合K线、成交额和行业变化再判断。' },
     ],
     checklist: stock.checklist ?? ['同步实时价格', '补充历史K线', '查看行业和公告变化'],
@@ -539,17 +539,17 @@ function hasLivePrice(stock) {
 }
 
 function displayStockPrice(stock) {
-  return hasLivePrice(stock) ? stock.price : '待同步'
+  return hasLivePrice(stock) ? stock.price : '行情更新中'
 }
 
 function displayStockMove(stock) {
-  return hasLivePrice(stock) ? formatPercent(stock.performance.day) : '待同步'
+  return hasLivePrice(stock) ? formatPercent(stock.performance.day) : '等待行情'
 }
 
 function StockPriceLine({ stock, compact = false }) {
   return (
     <span className={compact ? 'stock-price-line is-compact' : 'stock-price-line'}>
-      <b>{hasLivePrice(stock) ? `¥${stock.price}` : '待同步'}</b>
+      <b>{hasLivePrice(stock) ? `¥${stock.price}` : '行情更新中'}</b>
       {hasLivePrice(stock) && <em>/股</em>}
     </span>
   )
@@ -3167,7 +3167,7 @@ function MoverGroup({ label, stocks, maxMove, onSelect }) {
           >
             <div className="mover-info">
               <strong>{stock.name}</strong>
-              <span>{stock.code} · {hasLivePrice(stock) ? `¥${stock.price}/股` : '行情待同步'}</span>
+              <span>{stock.code} · {hasLivePrice(stock) ? `¥${stock.price}/股` : '等待行情'}</span>
             </div>
             <Sparkline points={stock.sparkline} positive={move >= 0} />
             <div className={move >= 0 ? 'mover-change is-up' : 'mover-change is-down'}>
