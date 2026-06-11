@@ -5071,7 +5071,7 @@ function WatchView({
             {dataStatus?.sourceCapabilities?.length > 0 && (
               <div className="data-capability-list">
                 {dataStatus.sourceCapabilities.slice(0, 4).map((source) => (
-                  <div key={source.id}>
+                  <article key={source.id}>
                     <span>{source.name}</span>
                     <strong>
                       {source.status === 'live'
@@ -5088,7 +5088,7 @@ function WatchView({
                     </strong>
                     <p>{source.text}</p>
                     {source.refresh && <em>{source.refresh}</em>}
-                  </div>
+                  </article>
                 ))}
               </div>
             )}

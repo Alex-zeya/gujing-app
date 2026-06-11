@@ -2952,7 +2952,7 @@
 
 .today-card div,
 .chart-range,
-.data-status div {
+.data-status > div:first-child {
   display: flex;
   justify-content: space-between;
   gap: 8px;
@@ -4812,7 +4812,7 @@
   gap: 8px;
 }
 
-.data-capability-list div {
+.data-capability-list article {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 5px 10px;
@@ -4824,9 +4824,12 @@
 }
 
 .data-capability-list span {
+  min-width: 0;
   color: var(--ink);
   font-size: 12px;
   font-weight: 900;
+  line-height: 1.25;
+  white-space: nowrap;
 }
 
 .data-capability-list strong {
