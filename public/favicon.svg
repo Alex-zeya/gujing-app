@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="股镜">
+  <rect width="64" height="64" rx="15" fill="oklch(0.16 0.018 260)" />
+  <path d="M13 44.5h31.5" stroke="oklch(0.56 0.13 168)" stroke-width="4" stroke-linecap="round" />
+  <circle cx="31" cy="30" r="19" fill="none" stroke="oklch(0.72 0.08 255)" stroke-width="4" />
+  <path d="M44.5 43.5 53 52" fill="none" stroke="oklch(0.72 0.08 255)" stroke-width="5" stroke-linecap="round" />
+  <path d="M22 35V20M22 29h7M32 39V17M32 24h8M43 33V22M43 28h5" fill="none" stroke="white" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round" />
+  <circle cx="31" cy="30" r="24" fill="none" stroke="white" stroke-width="1.25" opacity=".1" />
+</svg>

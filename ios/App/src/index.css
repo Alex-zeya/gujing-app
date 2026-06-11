@@ -1,0 +1,43 @@
+:root {
+  --bg: oklch(0.985 0.002 260);
+  --surface: oklch(1 0 0);
+  --surface-strong: oklch(0.955 0.006 260);
+  --ink: oklch(0.16 0.018 260);
+  --muted: oklch(0.42 0.024 260);
+  --primary: oklch(0.34 0.118 255);
+  --primary-soft: oklch(0.93 0.028 255);
+  --accent: oklch(0.56 0.13 168);
+  --success: oklch(0.49 0.12 154);
+  --warning: oklch(0.62 0.14 76);
+  --danger: oklch(0.55 0.16 28);
+  --market-up: oklch(0.55 0.16 28);
+  --market-down: oklch(0.49 0.12 154);
+  --border: oklch(0.885 0.008 260);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background: var(--bg);
+}
+
+body {
+  min-width: 320px;
+  min-height: 100svh;
+  margin: 0;
+}
+
+#root {
+  min-height: 100svh;
+}

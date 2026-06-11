@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2732" height="2732" viewBox="0 0 2732 2732" role="img" aria-label="股镜启动页">
+  <rect width="2732" height="2732" fill="#f5f8fc"/>
+  <g transform="translate(854 702)">
+    <rect width="1024" height="1024" rx="238" fill="#07101c"/>
+    <circle cx="498" cy="500" r="372" fill="none" stroke="#ffffff" stroke-width="24" opacity="0.08"/>
+    <path d="M194 705H736" stroke="#0b9c72" stroke-width="70" stroke-linecap="round"/>
+    <circle cx="496" cy="490" r="296" fill="none" stroke="#82aee2" stroke-width="92"/>
+    <path d="M712 706L846 840" fill="none" stroke="#82aee2" stroke-width="86" stroke-linecap="round"/>
+    <path d="M336 592V326M336 470H460M510 652V288M510 404H642M686 572V364M686 478H770"
+          fill="none" stroke="#ffffff" stroke-width="68" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="1366" y="1950" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', Arial, sans-serif" font-size="150" font-weight="800" fill="#07101c">股镜</text>
+  <text x="1366" y="2090" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', Arial, sans-serif" font-size="66" font-weight="650" fill="#475569">股票研究辅助</text>
+</svg>

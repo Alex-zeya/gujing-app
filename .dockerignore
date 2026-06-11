@@ -1,0 +1,17 @@
+node_modules
+dist
+dist-ssr
+.git
+.DS_Store
+*.log
+*.local
+.env*
+!.env.production.example
+
+backend/.venv
+backend/__pycache__
+backend/*.db
+backend/server.log
+
+ios/build
+ios/App/DerivedData

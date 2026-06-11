@@ -1,0 +1,5 @@
+fastapi==0.116.2
+uvicorn[standard]==0.35.0
+akshare==1.18.64
+easyquotation==0.7.7
+requests==2.34.2

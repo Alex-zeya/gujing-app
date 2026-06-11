@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: gujing-api
+    env: docker
+    plan: starter
+    healthCheckPath: /api/health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: PORT
+        value: 8010
+      - key: GUJING_DB_PATH
+        value: /data/gujing.db
+      - key: CORS_ORIGINS
+        value: capacitor://localhost,ionic://localhost,gujing://localhost
+      - key: SMS_PROVIDER
+        value: mock
+    disk:
+      name: gujing-data
+      mountPath: /data
+      sizeGB: 1

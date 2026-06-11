@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>股镜隐私政策</title>
+    <style>
+      :root {
+        --bg: oklch(0.985 0.002 260);
+        --surface: oklch(1 0 0);
+        --ink: oklch(0.16 0.018 260);
+        --muted: oklch(0.42 0.024 260);
+        --primary: oklch(0.34 0.118 255);
+        --primary-soft: oklch(0.93 0.028 255);
+        --border: oklch(0.885 0.008 260);
+        --danger: oklch(0.5 0.16 28);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+        line-height: 1.7;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      main {
+        width: min(100%, 780px);
+        margin: 0 auto;
+        padding: 48px 18px 72px;
+      }
+
+      header {
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 24px;
+        background: linear-gradient(180deg, oklch(0.97 0.015 255), var(--surface));
+      }
+
+      .brand {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 20px;
+      }
+
+      .mark {
+        display: grid;
+        width: 48px;
+        height: 48px;
+        place-items: center;
+        border-radius: 14px;
+        background: oklch(0.12 0.018 260);
+        color: white;
+        font-size: 24px;
+        font-weight: 900;
+      }
+
+      .caption {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        margin-bottom: 8px;
+        font-size: clamp(32px, 6vw, 48px);
+        line-height: 1.1;
+      }
+
+      h2 {
+        margin-bottom: 12px;
+        font-size: 22px;
+        line-height: 1.25;
+      }
+
+      h3 {
+        margin: 18px 0 8px;
+        font-size: 17px;
+      }
+
+      section {
+        margin-top: 16px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 22px;
+        background: var(--surface);
+      }
+
+      ul {
+        margin: 0;
+        padding-left: 1.2em;
+      }
+
+      li + li {
+        margin-top: 8px;
+      }
+
+      a {
+        color: var(--primary);
+        font-weight: 800;
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      .summary {
+        margin: 0;
+        color: var(--muted);
+        font-size: 16px;
+        font-weight: 720;
+      }
+
+      .notice {
+        border-color: oklch(0.78 0.06 28);
+        background: oklch(0.985 0.008 28);
+      }
+
+      .notice strong {
+        color: var(--danger);
+      }
+
+      .meta {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 18px;
+      }
+
+      .meta div {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px;
+        background: oklch(0.975 0.006 260);
+      }
+
+      .meta span {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .meta strong {
+        display: block;
+        margin-top: 4px;
+        font-size: 15px;
+      }
+
+      footer {
+        margin-top: 24px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      @media (max-width: 560px) {
+        main {
+          padding-top: 28px;
+        }
+
+        header,
+        section {
+          border-radius: 12px;
+          padding: 18px;
+        }
+
+        .meta {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="brand">
+          <div class="mark" aria-hidden="true">股</div>
+          <div>
+            <p class="caption">股票研究辅助</p>
+            <strong>股镜</strong>
+          </div>
+        </div>
+        <h1>隐私政策</h1>
+        <p class="summary">
+          本政策说明股镜会收集哪些数据、如何使用这些数据、如何保存和删除数据，以及用户可以如何管理自己的信息。
+        </p>
+        <div class="meta">
+          <div>
+            <span>生效日期</span>
+            <strong>2026 年 6 月 11 日</strong>
+          </div>
+          <div>
+            <span>适用范围</span>
+            <strong>股镜 iOS App 和网页测试版</strong>
+          </div>
+        </div>
+      </header>
+
+      <section>
+        <h2>一、我们收集的信息</h2>
+        <p>为了提供账户同步、持仓分析、观察池、提醒规则和风险偏好功能，股镜可能会收集以下信息：</p>
+        <ul>
+          <li>账户信息：手机号、验证码登录状态、登录设备信息、会话 token、微信登录 openid（如后续接入）。</li>
+          <li>用户主动填写或选择的信息：昵称、风险偏好、默认市场、持仓股票、持仓金额、持仓股数、成本价、观察池股票和提醒规则。</li>
+          <li>使用记录：搜索记录、推荐反馈、查看分析、添加观察、加入持仓、删除持仓等操作记录。</li>
+          <li>系统运行信息：接口错误、任务运行状态、数据刷新时间、设备 User-Agent 和基础网络诊断信息。</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>二、我们如何使用信息</h2>
+        <ul>
+          <li>用于识别用户账户，并在不同设备间同步持仓、观察池和提醒设置。</li>
+          <li>用于生成个性化风险提示、持仓建议、观察理由、推荐股票排序和模型表现记录。</li>
+          <li>用于排查接口错误、提升数据刷新稳定性和改善 App 使用体验。</li>
+          <li>用于满足 App Store 审核、账户安全、合规说明和用户数据管理要求。</li>
+        </ul>
+      </section>
+
+      <section class="notice">
+        <h2>三、投资和交易相关说明</h2>
+        <p>
+          <strong>股镜不会要求证券账户密码，不会自动下单，也不会代替用户做买卖决定。</strong>
+          App 中的股票分析、预测和持仓建议只用于信息整理和风险观察，不构成证券投资咨询或收益承诺。
+        </p>
+      </section>
+
+      <section>
+        <h2>四、第三方服务和数据来源</h2>
+        <p>股镜可能会使用以下第三方服务或数据来源。我们会尽量减少传输的数据，只在功能需要时使用。</p>
+        <ul>
+          <li>行情和股票数据来源：如 easyquotation、东方财富、Tushare、AkShare 等数据接口或开源数据工具。</li>
+          <li>短信验证码服务：如后续接入阿里云短信或腾讯云短信，会用于发送登录验证码。</li>
+          <li>微信登录：如后续接入微信开放平台，会用于完成用户授权登录。</li>
+          <li>Apple 平台服务：用于 iOS App 安装、通知权限、App Store 审核和系统能力。</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>五、数据保存和删除</h2>
+        <ul>
+          <li>账户、持仓、观察池、提醒规则和历史记录会保存到股镜后端，用于提供同步和个性化分析。</li>
+          <li>用户可以在 App 的“我的”页面底部点击“删除账户 / 清除数据”，删除账户资料和相关个人数据。</li>
+          <li>删除后会清除用户资料、持仓、观察池、提醒、推荐反馈、建议历史、回测记录和登录会话。</li>
+          <li>如果法律法规要求保留特定记录，我们会在必要范围和期限内保留，并在到期后删除或匿名化。</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>六、用户权利</h2>
+        <p>用户可以在 App 内查看、修改或删除自己的账户数据。正式上线后，我们会提供可联系的支持邮箱，用于处理数据访问、纠正、导出和删除请求。</p>
+      </section>
+
+      <section>
+        <h2>七、儿童隐私</h2>
+        <p>股镜不面向 13 周岁以下儿童提供服务。若发现误收集儿童个人信息，我们会尽快删除相关数据。</p>
+      </section>
+
+      <section>
+        <h2>八、政策更新</h2>
+        <p>如果隐私政策发生重要变化，我们会在 App 内或本页面更新说明。继续使用股镜，即表示你了解更新后的政策。</p>
+      </section>
+
+      <section>
+        <h2>九、联系我们</h2>
+        <p>
+          当前版本仍处于内部测试阶段。正式上架前，需要补充运营主体、联系邮箱和公开网站域名。
+          临时联系标识：Alex-w。
+        </p>
+      </section>
+
+      <footer>
+        <p>本页面是股镜 App Store 上架前的隐私政策草案，可作为公开 URL 页面部署到官网或静态托管服务。</p>
+      </footer>
+    </main>
+  </body>
+</html>
