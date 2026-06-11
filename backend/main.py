@@ -35,6 +35,7 @@ ADVICE_MODEL_VERSION = "advice-v3-research-framework"
 FORECAST_MODEL_VERSION = "forecast-v1-rule-stat"
 RESEARCH_FRAMEWORK_VERSION = "research-v1-a-share-adapted"
 COMPETITIVE_INTEL_VERSION = "competitive-intel-v1-a-share"
+FUNDAMENTAL_PROFILE_VERSION = "fundamental-v1-data-guard"
 RECOMMENDATION_MODEL_VERSION = "recommend-v2-feedback"
 RISK_PROFILE_RULES = {
     "稳健": {
@@ -2491,6 +2492,183 @@ def industry_competitive_rules(industry: str | None) -> dict[str, Any]:
     return INDUSTRY_COMPETITIVE_RULES["default"]
 
 
+def compact_metric_text(value: Any, fallback: str = "待补充") -> str:
+    if value is None or value == "":
+        return fallback
+    return str(value)
+
+
+def metrics_to_dict(metrics: Any) -> dict[str, Any]:
+    if isinstance(metrics, dict):
+        return metrics
+    if isinstance(metrics, list):
+        normalized: dict[str, Any] = {}
+        for item in metrics:
+            if not isinstance(item, dict):
+                continue
+            key = item.get("key") or item.get("name") or item.get("label")
+            value = item.get("value")
+            if key and value is not None:
+                normalized[str(key)] = value
+        return normalized
+    return {}
+
+
+def valuation_text(stock: dict[str, Any]) -> str:
+    stats = stock.get("quoteStats") or {}
+    pe = number_or_none(stats.get("pe") or stats.get("peRatio"))
+    pb = number_or_none(stats.get("pb") or stats.get("pbRatio"))
+    parts = []
+    if pe is not None and pe > 0:
+        parts.append(f"PE {pe:.1f}")
+    if pb is not None and pb > 0:
+        parts.append(f"PB {pb:.2f}")
+    return " / ".join(parts) if parts else "待补充"
+
+
+def amount_activity_text(stock: dict[str, Any]) -> str:
+    stats = stock.get("quoteStats") or {}
+    for key in ("amount", "turnover", "volume"):
+        if stats.get(key):
+            return str(stats[key])
+    return "待补充"
+
+
+def build_fundamental_profile(
+    stock: dict[str, Any],
+    *,
+    data_quality: dict[str, Any] | None = None,
+    competitive_intel: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    stats = stock.get("quoteStats") or {}
+    metrics = metrics_to_dict(stock.get("metrics"))
+    quality = data_quality or stock_data_quality(stock)
+    market_cap = market_cap_text(stock)
+    valuation = valuation_text(stock)
+    eps = number_or_none(stats.get("eps") or metrics.get("eps"))
+    revenue_growth = metrics.get("revenueGrowth") or metrics.get("revenue_growth")
+    profit_growth = metrics.get("profitGrowth") or metrics.get("profit_growth")
+    gross_margin = metrics.get("grossMargin") or metrics.get("gross_margin")
+    debt_ratio = metrics.get("debtRatio") or metrics.get("debt_ratio")
+    open_price = stats.get("open")
+    previous_close = stats.get("previousClose") or stats.get("prevClose")
+    day_high = stats.get("dayHigh")
+    day_low = stats.get("dayLow")
+    history_high = stats.get("historyHigh") or stats.get("yearHigh") or stats.get("high52w")
+    amount_text = amount_activity_text(stock)
+
+    field_checks = {
+        "市值": market_cap != "待补充",
+        "估值": valuation != "待补充",
+        "盈利": eps is not None or revenue_growth is not None or profit_growth is not None or gross_margin is not None,
+        "负债": debt_ratio is not None,
+        "交易": bool(open_price or previous_close or amount_text != "待补充"),
+    }
+    available_count = sum(1 for value in field_checks.values() if value)
+    source_score = int((quality.get("sourceTrust") or {}).get("score") or 50)
+    score = clamp_score(30 + available_count * 11 + source_score * 0.18)
+    if score >= 74:
+        label = "资料较完整"
+        summary = "基本面字段足够做第一轮筛选，但仍需要结合财报和行业变化复核。"
+    elif score >= 56:
+        label = "资料可辅助"
+        summary = "已有部分市值、行情或估值字段，适合辅助判断，不适合单独决定仓位。"
+    else:
+        label = "资料待补充"
+        summary = "基本面字段不足，系统会降低持仓建议强度，先看行情和K线确认。"
+
+    metrics_list = [
+        {
+            "name": "企业市值",
+            "value": market_cap,
+            "status": "已读取" if market_cap != "待补充" else "待补充",
+            "note": "用于判断公司体量和波动承受能力。",
+        },
+        {
+            "name": "估值字段",
+            "value": valuation,
+            "status": "已读取" if valuation != "待补充" else "待补充",
+            "note": "后续会加入估值分位，避免只看静态PE/PB。",
+        },
+        {
+            "name": "盈利字段",
+            "value": f"EPS {eps:.2f}" if eps is not None else compact_metric_text(profit_growth or revenue_growth or gross_margin),
+            "status": "已读取" if field_checks["盈利"] else "待补充",
+            "note": "更完整的版本会看营收、利润和毛利率变化。",
+        },
+        {
+            "name": "交易活跃",
+            "value": amount_text,
+            "status": "已读取" if amount_text != "待补充" else "待补充",
+            "note": "成交越活跃，短线信号更容易被验证。",
+        },
+    ]
+    if open_price or previous_close:
+        metrics_list.append(
+            {
+                "name": "开收参考",
+                "value": f"开 {compact_metric_text(open_price)} / 昨 {compact_metric_text(previous_close)}",
+                "status": "已读取",
+                "note": "用于判断当天价格相对昨日收盘的位置。",
+            }
+        )
+    if day_high or day_low or history_high:
+        metrics_list.append(
+            {
+                "name": "价格区间",
+                "value": f"高 {compact_metric_text(day_high or history_high)} / 低 {compact_metric_text(day_low)}",
+                "status": "已读取",
+                "note": "用于观察当前位置是否接近短期高低点。",
+            }
+        )
+
+    strengths = []
+    risks = []
+    if market_cap != "待补充":
+        strengths.append("已拿到企业体量字段，可以辅助判断公司规模和行业位置。")
+    else:
+        risks.append("市值缺失时，无法判断公司体量和估值安全边际。")
+    if valuation != "待补充":
+        strengths.append("已读取估值字段，后续可继续做估值分位和同行对比。")
+    else:
+        risks.append("估值字段不足，不能只凭涨跌幅判断是否便宜。")
+    if field_checks["盈利"]:
+        strengths.append("已有部分盈利或成长字段，可以开始做基本面跟踪。")
+    else:
+        risks.append("营收、利润、毛利率等财报字段仍需补齐。")
+    if (competitive_intel or {}).get("verdict"):
+        strengths.append(f"行业竞争力结论：{competitive_intel['verdict']}。")
+    if source_score < 60:
+        risks.append("当前基本面来源可信度偏低，建议等待授权或更稳定数据源。")
+
+    holding_impact = "基本面资料不足，持仓建议会偏保守。"
+    if score >= 74:
+        holding_impact = "基本面资料较完整，可以和趋势、仓位一起用于判断是否继续持有。"
+    elif score >= 56:
+        holding_impact = "基本面可做辅助，如果已经持有，先控制仓位并等待财报字段补齐。"
+
+    return {
+        "version": FUNDAMENTAL_PROFILE_VERSION,
+        "title": "基本面资料",
+        "score": score,
+        "label": label,
+        "summary": summary,
+        "metrics": metrics_list[:6],
+        "quality": {
+            "available": available_count,
+            "total": len(field_checks),
+            "source": (quality.get("sourceTrust") or {}).get("label", "来源待确认"),
+            "warnings": quality.get("warnings", [])[:2],
+        },
+        "strengths": strengths[:3],
+        "risks": risks[:3],
+        "nextData": ["营收增速", "净利润增速", "毛利率", "负债率", "估值分位"],
+        "holdingImpact": holding_impact,
+        "compliance": "基本面资料只用于辅助研究，不构成买卖建议。",
+        "updated": now_text(),
+    }
+
+
 def build_industry_competitive_intel(
     stock: dict[str, Any],
     *,
@@ -2613,6 +2791,7 @@ def build_research_framework(
     forecast_data = forecast or build_stock_forecast(stock)
     quality = data_quality or stock_data_quality(stock)
     competitive_intel = build_industry_competitive_intel(stock, forecast=forecast_data, data_quality=quality)
+    fundamental_profile = build_fundamental_profile(stock, data_quality=quality, competitive_intel=competitive_intel)
     news_impact = stock.get("newsImpact") or {}
     news_counts = news_impact.get("counts") or {}
     risk_profile = risk_profile_rules(risk_level)
@@ -2647,8 +2826,9 @@ def build_research_framework(
         + (10 if quote_stats.get("pe") or quote_stats.get("pb") else 0)
         + (8 if stock.get("industry") and stock.get("industry") != "A股" else 0)
         + (5 if current_price else -5)
+        + (4 if fundamental_profile.get("score", 0) >= 70 else 0)
     )
-    fundamental_summary = "基础资料可用" if fundamental_score >= 60 else "基本面待补充"
+    fundamental_summary = fundamental_profile.get("label") or ("基础资料可用" if fundamental_score >= 60 else "基本面待补充")
     fundamental_evidence = [
         f"企业市值 {market_cap}，行业分类：{stock.get('industry') or '待识别'}。",
         f"行业模型采用“{industry_model['name']}”，重点看：{industry_model['focus']}",
@@ -2775,6 +2955,7 @@ def build_research_framework(
         "summary": f"{stock.get('name', stock.get('code'))}当前研究评分 {weighted_total}，{conclusion}。",
         "groups": groups,
         "competitiveIntel": competitive_intel,
+        "fundamentalProfile": fundamental_profile,
         "bullCase": [f"{item['title']}：{item['summary']}" for item in top_groups],
         "bearCase": [f"{item['title']}：{item['watch']}" for item in weak_groups],
         "dataGaps": quality.get("warnings", [])[:3],
@@ -3166,6 +3347,11 @@ def score_stock_analysis(stock: dict[str, Any]) -> dict[str, Any]:
         forecast=forecast,
         data_quality=data_quality,
     )
+    fundamental_profile = research_framework.get("fundamentalProfile") or build_fundamental_profile(
+        stock,
+        data_quality=data_quality,
+        competitive_intel=competitive_intel,
+    )
     analysis = {
         "modelVersion": ADVICE_MODEL_VERSION,
         "total": total_score,
@@ -3182,6 +3368,7 @@ def score_stock_analysis(stock: dict[str, Any]) -> dict[str, Any]:
         "forecast": forecast,
         "researchFramework": research_framework,
         "competitiveIntel": competitive_intel,
+        "fundamentalProfile": fundamental_profile,
         "dataQuality": data_quality,
         "sourceTrust": data_quality.get("sourceTrust"),
         "compliance": compliance_disclosure(forecast.get("confidence", {}).get("label")),

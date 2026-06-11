@@ -2291,6 +2291,7 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
   const industryModel = analysisScore.industryModel ?? analysisScore.advice?.industryModel
   const researchFramework = analysisScore.researchFramework ?? analysisScore.advice?.researchFramework
   const competitiveIntel = analysisScore.competitiveIntel ?? researchFramework?.competitiveIntel
+  const fundamentalProfile = analysisScore.fundamentalProfile ?? researchFramework?.fundamentalProfile
   const compliance = analysisScore.compliance
   const newsImpact = stock.newsImpact
 
@@ -2436,6 +2437,58 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
               </div>
             </div>
             <small>{competitiveIntel.dataNote}</small>
+          </div>
+        </details>
+      )}
+
+      {fundamentalProfile && (
+        <details className="analysis-disclosure fundamental-profile">
+          <summary>
+            <span>查看基本面</span>
+            <strong>{fundamentalProfile.label}</strong>
+            <ChevronRight size={17} />
+          </summary>
+          <div className="fundamental-profile-card">
+            <div className="fundamental-profile-head">
+              <div>
+                <span>{fundamentalProfile.title}</span>
+                <strong>{fundamentalProfile.score}</strong>
+              </div>
+              <p>{fundamentalProfile.summary}</p>
+            </div>
+            <div className="fundamental-metric-grid">
+              {fundamentalProfile.metrics?.slice(0, 6).map((metric) => (
+                <article key={metric.name}>
+                  <div>
+                    <span>{metric.name}</span>
+                    <b>{metric.status}</b>
+                  </div>
+                  <strong>{metric.value}</strong>
+                  <p>{metric.note}</p>
+                </article>
+              ))}
+            </div>
+            <div className="fundamental-impact">
+              <span>对持仓的影响</span>
+              <p>{fundamentalProfile.holdingImpact}</p>
+            </div>
+            <div className="fundamental-profile-lists">
+              <div>
+                <span>已有依据</span>
+                {fundamentalProfile.strengths?.slice(0, 2).map((item) => <p key={item}>{item}</p>)}
+              </div>
+              <div>
+                <span>继续补充</span>
+                {fundamentalProfile.nextData?.slice(0, 3).map((item) => <p key={item}>{item}</p>)}
+              </div>
+            </div>
+            {fundamentalProfile.risks?.length > 0 && (
+              <div className="fundamental-risk-list">
+                <span>资料风险</span>
+                {fundamentalProfile.risks.slice(0, 2).map((item) => <p key={item}>{item}</p>)}
+              </div>
+            )}
+            <small>{fundamentalProfile.compliance}</small>
           </div>
         </details>
       )}
