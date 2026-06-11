@@ -907,7 +907,7 @@ function App() {
     .map((code) => stocks[code])
     .filter((stock) => stock?.market === 'cn')
     .slice(0, 5)
-  const totalAmount = portfolio.reduce((sum, item) => sum + item.amount, 0)
+  const totalAmount = portfolio.reduce((sum, item) => sum + (item.marketValue ?? item.amount), 0)
 
   function switchTab(tabId) {
     setActiveTab(tabId)
@@ -1522,6 +1522,25 @@ function App() {
     }
   }
 
+  async function sellStockFromPortfolio(code, payload) {
+    const clean = cleanCode(code)
+    if (!clean) return
+    try {
+      const snapshot = await apiJson(`/api/portfolio/${clean}/sell`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+      setPortfolio(portfolioSnapshotToItems(snapshot))
+      const insights = await apiJson('/api/portfolio/insights')
+      setPortfolioInsights(insights)
+      void refreshUserSummary()
+      setApiStatus('connected')
+    } catch {
+      setApiStatus('offline')
+      throw new Error('sell failed')
+    }
+  }
+
   async function loadPortfolioAdviceHistory(code) {
     const clean = cleanCode(code)
     if (!clean) return
@@ -1873,6 +1892,8 @@ function App() {
             draft={draft}
             setDraft={setDraft}
             addHolding={addHolding}
+            buyHolding={addStockToPortfolio}
+            sellHolding={sellStockFromPortfolio}
             removeHolding={removeHolding}
             adviceHistory={portfolioAdviceHistory}
             loadAdviceHistory={loadPortfolioAdviceHistory}
@@ -3423,17 +3444,30 @@ function PortfolioView({
   draft,
   setDraft,
   addHolding,
+  buyHolding,
+  sellHolding,
   removeHolding,
   setActiveTab,
   setKlineReturnTab,
   setSelectedCode,
   setQuery,
 }) {
+  const [tradeDraft, setTradeDraft] = useState({
+    code: '',
+    action: 'buy',
+    amount: '',
+    shares: '',
+    price: '',
+  })
+  const [tradeNotice, setTradeNotice] = useState('')
+  const [isSubmittingTrade, setIsSubmittingTrade] = useState(false)
   const topHolding = portfolio.reduce((top, item) => ((item.marketValue ?? item.amount) > (top.marketValue ?? top.amount) ? item : top), portfolio[0])
   const portfolioDayGain = portfolio.reduce((sum, item) => sum + (item.dayGain ?? 0), 0)
   const totalCost = portfolio.reduce((sum, item) => sum + (item.amount ?? 0), 0)
   const totalGain = portfolio.reduce((sum, item) => sum + (item.totalGain ?? 0), 0)
   const totalGainRate = totalCost ? (totalGain / totalCost) * 100 : 0
+  const selectedTradeHolding = portfolio.find((item) => item.code === tradeDraft.code)
+  const cashMultiple = totalCost ? totalAmount / totalCost : 0
   const healthScore = Math.max(42, 92 - concentration.ratio + Math.round(portfolioDayGain / 1000))
   const portfolioAdvice = buildPortfolioAdvice(portfolio, concentration, portfolioDayGain)
   const holdingSuggestions = draft.code.trim()
@@ -3447,6 +3481,62 @@ function PortfolioView({
     sell: '减仓',
     adjust: '修改',
     remove: '移出',
+  }
+  const tradeActionLabel = tradeDraft.action === 'sell' ? '卖出' : '买入'
+
+  function openTradePanel(item, action = 'buy') {
+    const price = Number(item.currentPrice || item.costPrice || 0)
+    setTradeNotice('')
+    setTradeDraft({
+      code: item.code,
+      action,
+      amount: action === 'buy' ? '10000' : '',
+      shares: action === 'sell' ? String(item.shares || '') : '',
+      price: price > 0 ? String(price) : '',
+    })
+  }
+
+  async function submitTrade(event) {
+    event.preventDefault()
+    if (!selectedTradeHolding) return
+    const amount = Number(tradeDraft.amount)
+    const shares = Number(tradeDraft.shares)
+    const price = Number(tradeDraft.price)
+    if (tradeDraft.action === 'buy' && (!amount || amount <= 0) && (!shares || shares <= 0)) {
+      setTradeNotice('买入需要填写金额或股数。')
+      return
+    }
+    if (tradeDraft.action === 'buy' && (!amount || amount <= 0) && shares > 0 && (!price || price <= 0)) {
+      setTradeNotice('按股数买入时需要填写成交价。')
+      return
+    }
+    if (tradeDraft.action === 'sell' && (!shares || shares <= 0) && (!amount || amount <= 0)) {
+      setTradeNotice('卖出需要填写股数或金额。')
+      return
+    }
+    setIsSubmittingTrade(true)
+    setTradeNotice('')
+    try {
+      if (tradeDraft.action === 'sell') {
+        await sellHolding(selectedTradeHolding.code, {
+          amount: amount > 0 ? amount : undefined,
+          shares: shares > 0 ? shares : undefined,
+          price: price > 0 ? price : undefined,
+          note: '持仓页卖出',
+        })
+      } else {
+        await buyHolding(selectedTradeHolding.code, amount > 0 ? amount : Math.round(shares * price), {
+          shares: shares > 0 ? shares : undefined,
+          costPrice: price > 0 ? price : undefined,
+        })
+      }
+      setTradeNotice(`${selectedTradeHolding.name}已记录${tradeActionLabel}。`)
+      setTradeDraft({ code: '', action: 'buy', amount: '', shares: '', price: '' })
+    } catch {
+      setTradeNotice(`${tradeActionLabel}失败，请确认后端和行情价格是否可用。`)
+    } finally {
+      setIsSubmittingTrade(false)
+    }
   }
 
   return (
@@ -3478,6 +3568,48 @@ function PortfolioView({
         <div>
           <span>持仓成本</span>
           <strong>{currency(totalCost)}</strong>
+        </div>
+      </section>
+
+      <section className="panel capital-ledger">
+        <div className="section-title split">
+          <div>
+            <BriefcaseBusiness size={18} />
+            <h2>本金与交易</h2>
+          </div>
+          <span>{portfolio.length} 只持仓</span>
+        </div>
+        <div className="capital-grid">
+          <div>
+            <span>投入本金</span>
+            <strong>{currency(totalCost)}</strong>
+          </div>
+          <div>
+            <span>当前市值</span>
+            <strong>{currency(totalAmount)}</strong>
+          </div>
+          <div>
+            <span>累计收益</span>
+            <strong className={totalGain >= 0 ? 'is-up' : 'is-down'}>
+              {currency(totalGain)}
+            </strong>
+          </div>
+          <div>
+            <span>收益率</span>
+            <strong className={totalGainRate >= 0 ? 'is-up' : 'is-down'}>
+              {formatPercent(totalGainRate)}
+            </strong>
+          </div>
+        </div>
+        <p>
+          本金按买入成本计算，卖出会减少对应股数和成本；收益根据当前市值和持仓成本估算。
+        </p>
+        <div className="capital-foot">
+          <span>今日盈亏</span>
+          <strong className={portfolioDayGain >= 0 ? 'is-up' : 'is-down'}>
+            {currency(portfolioDayGain)}
+          </strong>
+          <em>市值/本金 {cashMultiple ? cashMultiple.toFixed(2) : '0.00'}x</em>
         </div>
       </section>
 
@@ -3754,6 +3886,84 @@ function PortfolioView({
                 今日 {currency(item.dayGain ?? 0)}
               </span>
             </div>
+            <div className="holding-trade-actions">
+              <button type="button" onClick={() => openTradePanel(item, 'buy')}>
+                买入
+              </button>
+              <button type="button" onClick={() => openTradePanel(item, 'sell')}>
+                卖出
+              </button>
+            </div>
+            {tradeDraft.code === item.code && (
+              <form className="inline-trade-form" onSubmit={submitTrade}>
+                <div className="trade-segment">
+                  <button
+                    className={tradeDraft.action === 'buy' ? 'is-active' : ''}
+                    type="button"
+                    onClick={() => openTradePanel(item, 'buy')}
+                  >
+                    买入
+                  </button>
+                  <button
+                    className={tradeDraft.action === 'sell' ? 'is-active' : ''}
+                    type="button"
+                    onClick={() => openTradePanel(item, 'sell')}
+                  >
+                    卖出
+                  </button>
+                </div>
+                <div className="trade-input-grid">
+                  <input
+                    inputMode="decimal"
+                    placeholder={tradeDraft.action === 'sell' ? '卖出金额' : '买入金额'}
+                    value={tradeDraft.amount}
+                    onChange={(event) =>
+                      setTradeDraft((value) => ({
+                        ...value,
+                        amount: event.target.value.replace(/[^\d.]/g, ''),
+                      }))
+                    }
+                  />
+                  <input
+                    inputMode="numeric"
+                    placeholder={tradeDraft.action === 'sell' ? '卖出股数' : '买入股数'}
+                    value={tradeDraft.shares}
+                    onChange={(event) =>
+                      setTradeDraft((value) => ({
+                        ...value,
+                        shares: event.target.value.replace(/[^\d]/g, ''),
+                      }))
+                    }
+                  />
+                  <input
+                    inputMode="decimal"
+                    placeholder="成交价"
+                    value={tradeDraft.price}
+                    onChange={(event) =>
+                      setTradeDraft((value) => ({
+                        ...value,
+                        price: event.target.value.replace(/[^\d.]/g, ''),
+                      }))
+                    }
+                  />
+                </div>
+                <div className="trade-form-actions">
+                  <button type="submit" disabled={isSubmittingTrade}>
+                    {isSubmittingTrade ? '记录中' : `确认${tradeActionLabel}`}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTradeDraft({ code: '', action: 'buy', amount: '', shares: '', price: '' })
+                      setTradeNotice('')
+                    }}
+                  >
+                    取消
+                  </button>
+                </div>
+                {tradeNotice && <p>{tradeNotice}</p>}
+              </form>
+            )}
             <p className="holding-row-advice">{item.positionAdvice}</p>
             {item.adviceEngine?.action && (
               <div className="holding-action-panel">
