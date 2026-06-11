@@ -137,6 +137,7 @@ npm run dev
 
 - Web App：http://localhost:5173
 - 隐私政策草案：http://localhost:5173/privacy.html
+- 支持中心草案：http://localhost:5173/support.html
 
 ## 常用命令
 
@@ -224,10 +225,11 @@ npm run readiness -- https://你的后端域名
 2. 确认线上数据库切到 PostgreSQL。
 3. 接入真实短信服务，或明确首版测试登录策略。
 4. 部署公开隐私政策 URL。
-5. 完成 iPhone 真机完整回归测试。
-6. 准备 App Store 图标、启动页、截图、描述、关键词和审核说明。
-7. 继续优化数据源稳定性，减少字段缺失和“待补充”。
-8. 如需要系统通知，接入 Apple Push Notification service。
+5. 部署公开支持 URL。
+6. 完成 iPhone 真机完整回归测试。
+7. 准备 App Store 图标、启动页、截图、描述、关键词和审核说明。
+8. 继续优化数据源稳定性，减少字段缺失和“待补充”。
+9. 如需要系统通知，接入 Apple Push Notification service。
 
 更详细的上线清单见：
 

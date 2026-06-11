@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>股镜支持中心</title>
+    <style>
+      :root {
+        --bg: oklch(0.985 0.002 260);
+        --surface: oklch(1 0 0);
+        --ink: oklch(0.16 0.018 260);
+        --muted: oklch(0.42 0.024 260);
+        --primary: oklch(0.34 0.118 255);
+        --primary-soft: oklch(0.93 0.028 255);
+        --border: oklch(0.885 0.008 260);
+        --danger: oklch(0.5 0.16 28);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+        line-height: 1.7;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      main {
+        width: min(100%, 780px);
+        margin: 0 auto;
+        padding: 48px 18px 72px;
+      }
+
+      header,
+      section {
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: var(--surface);
+      }
+
+      header {
+        padding: 24px;
+        background: linear-gradient(180deg, oklch(0.97 0.015 255), var(--surface));
+      }
+
+      section {
+        margin-top: 16px;
+        padding: 22px;
+      }
+
+      .brand {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 20px;
+      }
+
+      .mark {
+        display: grid;
+        width: 48px;
+        height: 48px;
+        place-items: center;
+        border-radius: 14px;
+        background: oklch(0.12 0.018 260);
+        color: white;
+        font-size: 24px;
+        font-weight: 900;
+      }
+
+      h1,
+      h2,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        margin-bottom: 8px;
+        font-size: clamp(32px, 6vw, 48px);
+        line-height: 1.1;
+      }
+
+      h2 {
+        margin-bottom: 12px;
+        font-size: 22px;
+        line-height: 1.25;
+      }
+
+      ul {
+        margin: 0;
+        padding-left: 1.2em;
+      }
+
+      li + li {
+        margin-top: 8px;
+      }
+
+      a {
+        color: var(--primary);
+        font-weight: 850;
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      .caption,
+      .summary,
+      footer {
+        color: var(--muted);
+      }
+
+      .caption {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .summary {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 720;
+      }
+
+      .contact-card {
+        display: grid;
+        gap: 10px;
+        border-color: oklch(0.78 0.06 255);
+        background: var(--primary-soft);
+      }
+
+      .contact-card strong {
+        color: var(--primary);
+        font-size: 20px;
+      }
+
+      .notice {
+        border-color: oklch(0.78 0.06 28);
+        background: oklch(0.985 0.008 28);
+      }
+
+      .notice strong {
+        color: var(--danger);
+      }
+
+      footer {
+        margin-top: 24px;
+        font-size: 13px;
+      }
+
+      @media (max-width: 560px) {
+        main {
+          padding-top: 28px;
+        }
+
+        header,
+        section {
+          border-radius: 12px;
+          padding: 18px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="brand">
+          <div class="mark" aria-hidden="true">股</div>
+          <div>
+            <p class="caption">股票研究辅助</p>
+            <strong>股镜</strong>
+          </div>
+        </div>
+        <h1>支持中心</h1>
+        <p class="summary">
+          这里用于说明股镜的使用方式、数据状态、账户数据处理和常见问题。股镜仍处于内测阶段，功能会持续调整。
+        </p>
+      </header>
+
+      <section class="contact-card">
+        <h2>需要帮助</h2>
+        <p>如果你在登录、股票搜索、持仓记录、观察池、行情刷新或账户数据删除中遇到问题，可以通过以下方式联系维护者。</p>
+        <strong>support@gujing.app</strong>
+        <p class="summary">如果正式域名和邮箱尚未启用，可以先在 GitHub 仓库提交 Issue。</p>
+      </section>
+
+      <section>
+        <h2>常见问题</h2>
+        <ul>
+          <li>搜索不到股票：请尝试输入股票代码、企业名称、行业关键词或拼音首字母。部分数据源刷新失败时，搜索结果可能延迟。</li>
+          <li>行情显示延迟：免费数据源可能存在延迟、限流或字段缺失，App 会尽量使用缓存兜底并显示最近更新时间。</li>
+          <li>K 线缺失：历史 K 线需要数据源权限或公开接口可用，缺失时会显示为行情更新中。</li>
+          <li>持仓收益不准确：请检查持仓股数、成本价、买入金额和卖出记录是否填写正确。</li>
+          <li>验证码失败：开发阶段可能使用模拟短信；正式版本会接入真实短信服务商。</li>
+        </ul>
+      </section>
+
+      <section class="notice">
+        <h2>投资风险说明</h2>
+        <p>
+          <strong>股镜不提供证券投资咨询服务。</strong>
+          App 中的分析、评分、持仓建议和波动提示只用于信息整理和风险观察，不构成买卖建议，也不承诺收益。
+        </p>
+      </section>
+
+      <section>
+        <h2>账户和数据</h2>
+        <ul>
+          <li>用户可以在 App 的“我的”页面查看隐私说明和风险说明。</li>
+          <li>登录后可以在“我的”页面底部使用“删除账户 / 清除数据”。</li>
+          <li>删除会清空账户资料、持仓、观察池、提醒规则、推荐反馈、建议历史和登录会话。</li>
+          <li>更多数据说明见 <a href="/privacy.html">隐私政策</a>。</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>开发进度</h2>
+        <ul>
+          <li>已完成：A 股搜索、行情缓存、持仓、观察池、波动雷达、运行监控和 iOS 工程。</li>
+          <li>上线前：需要生产数据库、真实短信服务、公开隐私政策 URL、真机回归测试和 App Store 素材。</li>
+          <li>后续可能加入：更稳定的数据源、系统推送、更多行业分析和更完整的组合回测。</li>
+        </ul>
+      </section>
+
+      <footer>
+        <p>更新日期：2026 年 6 月 11 日。股镜支持中心内容会随产品开发持续更新。</p>
+      </footer>
+    </main>
+  </body>
+</html>

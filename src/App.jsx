@@ -4477,6 +4477,9 @@ function ProfileView({
           <a href="/privacy.html" target="_blank" rel="noreferrer">
             隐私政策网页
           </a>
+          <a href="/support.html" target="_blank" rel="noreferrer">
+            支持中心
+          </a>
           <button type="button" onClick={() => openLegalPanel('version')}>
             版本进度
           </button>
