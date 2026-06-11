@@ -4172,6 +4172,36 @@
   color: var(--market-down);
 }
 
+.task-error-list {
+  display: grid;
+  gap: 8px;
+}
+
+.task-error-list div {
+  display: grid;
+  gap: 4px;
+  border: 1px solid oklch(0.72 0.12 35 / 0.36);
+  border-radius: 10px;
+  padding: 10px;
+  background: oklch(0.98 0.02 65);
+}
+
+.task-error-list span,
+.task-error-list em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 780;
+  line-height: 1.35;
+}
+
+.task-error-list strong {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.35;
+}
+
 .profile-field {
   display: grid;
   gap: 7px;

@@ -19,7 +19,8 @@
 - `APP_ENV=production`：生产模式，验证码不再默认使用 `123456`。
 - `PORT`：云平台注入端口，Docker 启动命令会读取它。
 - `CORS_ORIGINS`：允许访问后端的前端来源，用英文逗号分隔。
-- `GUJING_DB_PATH`：SQLite 数据库路径。免费测试部署可以不填；如果之后要长期保存真实用户数据，应改用 Postgres 或付费持久化磁盘。
+- `DATABASE_URL`：PostgreSQL 连接串。Render Blueprint 会自动从 `gujing-db` 注入；其他平台可使用 Neon、Supabase、RDS 等连接串。
+- `GUJING_DB_PATH`：仅本地 SQLite 开发使用。线上不要依赖 Web 服务本地文件保存用户数据。
 - `SMS_PROVIDER`：前期可以用 `mock` 测试，正式短信需要换成 `aliyun` 或 `tencent` 并配置对应密钥。
 - `TUSHARE_TOKEN`：历史 K 线数据 token。
 
@@ -30,9 +31,11 @@
 注意：
 
 - `render.yaml` 里当前 `SMS_PROVIDER=mock`，只适合测试。
-- Render Free 服务空闲一段时间会休眠，第一次打开可能需要等待几十秒；免费文件系统也不会长期保存本地 SQLite 数据。
+- `render.yaml` 已配置 `gujing-db` PostgreSQL，并把连接串注入 `DATABASE_URL`。如果你在 Render 控制台看到 Blueprint 变更，需要点同步/重新部署。
+- Render Free 服务空闲一段时间会休眠，第一次打开可能需要等待几十秒。
+- Render 免费 PostgreSQL 适合测试，有期限和资源限制；正式上线前建议换成付费数据库或外部持久数据库。
 - `CORS_ORIGINS` 需要在拿到正式前端域名后补上。
-- SQLite 必须挂载持久化磁盘，否则服务重建后数据会丢。
+- 部署后先打开 `https://你的后端域名/api/system/readiness`，确认 `database.mode` 是 `postgres`，`missingTables` 为空。
 
 ## Railway / Fly.io
 
@@ -46,6 +49,6 @@
 - 临时 `localtunnel` 地址。
 - 开发模拟短信。
 - 生产 CORS 域名。
-- SQLite 的临时本地文件路径。
+- 免费测试数据库或临时本地文件路径。
 
-正式进入公开测试前，建议把数据库从 SQLite 迁到 PostgreSQL，避免多实例和持久化限制带来的数据风险。
+正式进入公开测试前，建议完成一次线上 readiness、股票搜索、手机号登录、持仓写入和真机 App 连接测试。

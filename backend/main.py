@@ -1218,12 +1218,14 @@ def refresh_stock_directory(force: bool = False) -> dict[str, Any]:
         errors.append(type(error).__name__)
     count = upsert_stock_directory(items, source)
     STOCK_DIRECTORY_CACHE.clear()
+    total_count = get_directory_status().get("count", 0)
     status = {
         "mode": "live" if source.startswith("akshare") else "seed",
         "source": source,
         "lastRefresh": now_text(),
-        "message": f"已同步 A股股票名称目录，共 {count} 只。" if count else "股票目录同步失败，继续使用已有缓存。",
-        "count": count or get_directory_status().get("count", 0),
+        "message": f"已同步 A股股票名称目录，当前可搜索 {total_count or count} 只。" if (total_count or count) else "股票目录同步失败，继续使用已有缓存。",
+        "count": total_count or count,
+        "updatedCount": count,
         "errors": errors,
     }
     return save_directory_status(status)
@@ -1603,7 +1605,7 @@ def fetch_eastmoney_quote_stats(code: str) -> dict[str, Any]:
         "https://push2.eastmoney.com/api/qt/stock/get",
         params={
             "secid": eastmoney_secid(code),
-            "fields": "f43,f44,f45,f46,f47,f48,f57,f58,f60,f116,f117,f162",
+            "fields": "f43,f44,f45,f46,f47,f48,f57,f58,f60,f116,f117,f162,f170",
         },
         headers={
             "User-Agent": "Mozilla/5.0",
@@ -1618,7 +1620,11 @@ def fetch_eastmoney_quote_stats(code: str) -> dict[str, Any]:
         number = number_or_none(data.get(field))
         return round(number / 100, 2) if number is not None and number > 0 else None
 
+    change_percent = number_or_none(data.get("f170"))
     return {
+        "price": scaled_price("f43"),
+        "name": data.get("f58"),
+        "changePercent": round(change_percent / 100, 2) if change_percent is not None else None,
         "open": scaled_price("f46"),
         "previousClose": scaled_price("f60"),
         "dayHigh": scaled_price("f44"),
@@ -1629,6 +1635,32 @@ def fetch_eastmoney_quote_stats(code: str) -> dict[str, Any]:
         "floatMarketCap": compact_yuan(data.get("f117")),
         "pe": round(float(data["f162"]) / 100, 2) if number_or_none(data.get("f162")) is not None else None,
     }
+
+
+def update_stock_with_eastmoney_quote_stats(stock: dict[str, Any], stats: dict[str, Any]) -> dict[str, Any]:
+    price = number_or_none(stats.get("price"))
+    if price is None or price <= 0:
+        return stock
+    day_change = number_or_none(stats.get("changePercent"))
+    stock = {**stock}
+    if stats.get("name"):
+        stock["name"] = str(stats["name"])
+    stock["price"] = price_to_text(price)
+    stock["change"] = format_change(day_change or stock.get("performance", {}).get("day", 0))
+    stock["performance"] = {**stock.get("performance", {}), "day": round(float(day_change or 0), 2)}
+    stock["updated"] = f"实时 {datetime.now().strftime('%H:%M')}"
+    stock["quoteStats"] = {
+        **stock.get("quoteStats", {}),
+        **{key: value for key, value in stats.items() if key not in {"name", "changePercent"} and value is not None},
+        "source": "eastmoney",
+    }
+    stock["dataCoverage"] = {
+        **stock.get("dataCoverage", {}),
+        "quote": True,
+        "fundamental": bool(stats.get("marketCap") or stock.get("dataCoverage", {}).get("fundamental")),
+    }
+    stock["pulse"] = f"当前价 {stock['price']}，今日涨跌 {stock['change']}。"
+    return stock
 
 
 def update_stock_with_spot(stock: dict[str, Any], spot_row: Any) -> dict[str, Any]:
@@ -3139,7 +3171,7 @@ def task_run_health(task_id: str) -> dict[str, Any]:
     with connect() as db:
         rows = db.execute(
             """
-            SELECT status, error, duration_ms, created_at
+            SELECT status, error, payload, duration_ms, created_at
             FROM task_runs
             WHERE task_id = ?
             ORDER BY created_at DESC
@@ -3153,11 +3185,16 @@ def task_run_health(task_id: str) -> dict[str, Any]:
             break
         failure_count += 1
     last = rows[0] if rows else None
+    last_payload: dict[str, Any] = {}
+    if last:
+        with suppress(Exception):
+            last_payload = from_json(last["payload"])
     return {
         "recentRuns": len(rows),
         "consecutiveFailures": failure_count,
         "lastStatus": last["status"] if last else "waiting",
         "lastError": last["error"] if last else None,
+        "lastMessage": last_payload.get("message") or last_payload.get("detail") or last_payload.get("error"),
         "lastDurationMs": last["duration_ms"] if last else None,
     }
 
@@ -3203,6 +3240,10 @@ def task_is_due(task_id: str) -> bool:
     last_run = parse_refresh_time(status.get("lastRun"))
     if last_run is None:
         return True
+    health = status.get("health") or {}
+    if int(health.get("consecutiveFailures") or 0) > 0:
+        retry_minutes = 10 if task_id == "stock_directory" else min(5, config["intervalMinutes"])
+        return datetime.now() - last_run >= timedelta(minutes=retry_minutes)
     return datetime.now() - last_run >= timedelta(minutes=config["intervalMinutes"])
 
 
@@ -3249,7 +3290,12 @@ def run_background_task(task_id: str, source: str = "background") -> dict[str, A
         return status
     except Exception as error:
         duration_ms = round((time.time() - started) * 1000)
-        error_payload = {"error": type(error).__name__}
+        error_message = str(error) or type(error).__name__
+        error_payload = {
+            "error": type(error).__name__,
+            "message": error_message[:500],
+            "taskId": task_id,
+        }
         status = save_task_status(
             task_id,
             {
@@ -3260,11 +3306,11 @@ def run_background_task(task_id: str, source: str = "background") -> dict[str, A
                 "nextRun": next_run_text(config["intervalMinutes"]),
                 "durationMs": duration_ms,
                 "lastResult": None,
-                "lastError": type(error).__name__,
+                "lastError": error_message[:160],
             },
         )
-        record_task_run(task_id, source, "error", duration_ms, error_payload, type(error).__name__)
-        raise RuntimeError(f"{task_id}:{type(error).__name__}") from error
+        record_task_run(task_id, source, "error", duration_ms, error_payload, error_message[:160])
+        raise RuntimeError(f"{task_id}:{error_message}") from error
 
 
 async def background_task_loop() -> None:
@@ -4047,6 +4093,25 @@ def refresh_quote_data(codes: list[str]) -> dict[str, Any]:
             refreshed_codes.append(code)
     except Exception as error:
         errors.append(f"easyquotation:{type(error).__name__}")
+
+    missing_codes = [code for code in target_codes if code not in refreshed_codes]
+    eastmoney_refreshed = []
+    for code in missing_codes:
+        try:
+            stock = update_stock_with_eastmoney_quote_stats(
+                get_stock_or_404(code),
+                fetch_eastmoney_quote_stats(code),
+            )
+            if stock_price_number(stock) <= 0:
+                continue
+            stock = mark_stock_cache(stock, "quoteRefreshedAt")
+            upsert_stock(stock)
+            refreshed_codes.append(code)
+            eastmoney_refreshed.append(code)
+        except Exception as error:
+            errors.append(f"eastmoney:{code}:{type(error).__name__}")
+    if eastmoney_refreshed:
+        source = f"{source}, eastmoney" if source != "easyquotation" else "eastmoney"
 
     status = {
         "mode": "live" if refreshed_codes else "fallback",
@@ -4868,7 +4933,7 @@ def search_result_summary(stock: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.get("/api/stocks/search")
-def stocks_search(keyword: str = "", full: bool = False, with_quotes: bool = False) -> list[dict[str, Any]]:
+def stocks_search(keyword: str = "", full: bool = False, with_quotes: bool = True) -> list[dict[str, Any]]:
     results = search_stocks(keyword)
     if keyword.strip() and not results:
         existing_codes = {stock["code"] for stock in results}
@@ -4885,7 +4950,7 @@ def stocks_search(keyword: str = "", full: bool = False, with_quotes: bool = Fal
         except Exception:
             results = []
     if with_quotes and results:
-        refresh_cached_quotes([stock["code"] for stock in results[:8]])
+        refresh_cached_quotes([stock["code"] for stock in results[:12]], max_age_minutes=1)
         results = [get_stock_or_404(stock["code"]) for stock in results[:25]]
     if not full:
         return [search_result_summary(stock) for stock in results[:25]]
@@ -5372,6 +5437,7 @@ def system_readiness_payload() -> dict[str, Any]:
         {
             "taskId": task["taskId"],
             "lastError": task.get("lastError") or (task.get("health") or {}).get("lastError"),
+            "lastMessage": (task.get("health") or {}).get("lastMessage"),
             "consecutiveFailures": (task.get("health") or {}).get("consecutiveFailures", 0),
         }
         for task in tasks

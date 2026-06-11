@@ -505,11 +505,28 @@ function formatPercent(value) {
   return `${sign}${value.toFixed(2)}%`
 }
 
+function stockPriceNumber(stock) {
+  const value = Number(String(stock?.price ?? '').replace(/,/g, ''))
+  return Number.isFinite(value) ? value : 0
+}
+
+function hasLivePrice(stock) {
+  return stockPriceNumber(stock) > 0
+}
+
+function displayStockPrice(stock) {
+  return hasLivePrice(stock) ? stock.price : '待同步'
+}
+
+function displayStockMove(stock) {
+  return hasLivePrice(stock) ? formatPercent(stock.performance.day) : '待同步'
+}
+
 function StockPriceLine({ stock, compact = false }) {
   return (
     <span className={compact ? 'stock-price-line is-compact' : 'stock-price-line'}>
-      <b>¥{stock.price}</b>
-      <em>/股</em>
+      <b>{hasLivePrice(stock) ? `¥${stock.price}` : '待同步'}</b>
+      {hasLivePrice(stock) && <em>/股</em>}
     </span>
   )
 }
@@ -707,7 +724,7 @@ function fallbackAnalysisScore(stock) {
     stance: decision.holdingAdvice,
     reasons: [decision.trendView],
     factors: [
-      { name: '短期动量', score: Math.max(0, Math.min(100, 50 + stock.performance.day * 3)), text: `今日 ${formatPercent(stock.performance.day)}` },
+      { name: '短期动量', score: Math.max(0, Math.min(100, 50 + stock.performance.day * 3)), text: `今日 ${displayStockMove(stock)}` },
       { name: '趋势质量', score: Math.max(0, Math.min(100, 50 + stock.performance.month * 2)), text: `近一月 ${formatPercent(stock.performance.month)}` },
       { name: '数据完整度', score: stock.dataCoverage?.history ? 80 : 45, text: stock.dataCoverage?.history ? '已接入历史K线' : '历史数据待补充' },
     ],
@@ -1352,7 +1369,7 @@ function App() {
     const clean = cleanCode(code)
     const stock = stockCatalogRef.current[clean] ?? stocks[clean]
     if (!stock || stock.market !== 'cn') return
-    const costPrice = Number(options.costPrice || stock.price.replace(/,/g, ''))
+    const costPrice = Number(options.costPrice || stockPriceNumber(stock))
     const shares = Number(options.shares || 0)
 
     setPortfolio((items) => {
@@ -1417,7 +1434,7 @@ function App() {
       mode: 'amount',
       amount: '10000',
       shares: '',
-      costPrice: stock.price.replace(/,/g, ''),
+      costPrice: hasLivePrice(stock) ? stock.price.replace(/,/g, '') : '',
     })
   }
 
@@ -1425,7 +1442,7 @@ function App() {
     event.preventDefault()
     if (!portfolioPrompt) return
 
-    const costPrice = Number(portfolioInput.costPrice || portfolioPrompt.price.replace(/,/g, ''))
+    const costPrice = Number(portfolioInput.costPrice || stockPriceNumber(portfolioPrompt))
     const shares = Number(portfolioInput.shares)
     const amount = portfolioInput.mode === 'amount'
       ? Number(portfolioInput.amount)
@@ -2109,7 +2126,7 @@ function PortfolioPrompt({ stock, input, setInput, error, isSubmitting, onSubmit
           <div>
             <span>加入持仓</span>
             <h2 id="portfolio-sheet-title">{stock.name}</h2>
-            <p>{stock.code} · 当前价 {stock.price}</p>
+            <p>{stock.code} · 当前价 {displayStockPrice(stock)}</p>
           </div>
           <button type="button" onClick={onClose}>取消</button>
         </div>
@@ -2167,7 +2184,7 @@ function PortfolioPrompt({ stock, input, setInput, error, isSubmitting, onSubmit
           <span>成本价</span>
           <input
             inputMode="decimal"
-            placeholder={stock.price.replace(/,/g, '')}
+            placeholder={hasLivePrice(stock) ? stock.price.replace(/,/g, '') : '手动填写成本价'}
             value={input.costPrice}
             onChange={(event) =>
               setInput((value) => ({
@@ -2655,11 +2672,13 @@ function DiscoverView({
   addStockToPortfolio,
   addStockToWatchlist,
 }) {
-  const rankedStocks = [...marketStocks].sort(
+  const pricedMarketStocks = marketStocks.filter(hasLivePrice)
+  const displayMarketStocks = pricedMarketStocks.length >= 10 ? pricedMarketStocks : marketStocks
+  const rankedStocks = [...displayMarketStocks].sort(
     (a, b) => b.performance.day - a.performance.day,
   )
   const topGainers = rankedStocks.slice(0, 5)
-  const topLosers = [...marketStocks]
+  const topLosers = [...displayMarketStocks]
     .sort((a, b) => a.performance.day - b.performance.day)
     .slice(0, 5)
   const maxMove = Math.max(
@@ -2667,7 +2686,10 @@ function DiscoverView({
     1,
   )
   const leader = rankedStocks[0]
-  const focusPool = [...marketStocks, ...Object.values(stocks).filter((stock) => stock.market === 'cn')]
+  const focusPool = [
+    ...pricedMarketStocks,
+    ...Object.values(stocks).filter((stock) => stock.market === 'cn' && hasLivePrice(stock)),
+  ]
   const focusStocks = Array.from(new Map(focusPool.map((stock) => [stock.code, stock])).values())
     .sort((a, b) => {
       const aScore = a.performance.day * 1.6 + a.performance.month * 0.8 + a.score / 20
@@ -2804,10 +2826,10 @@ function DiscoverView({
                   <b>{stock.name}</b>
                 </div>
                 <em className={trendClass(stock.performance.day)}>
-                  {formatPercent(stock.performance.day)}
+                  {displayStockMove(stock)}
                 </em>
                 <p>
-                  <span>现价 {stock.price}</span>
+                  <span>现价 {displayStockPrice(stock)}</span>
                   <span>{stock.performance.day >= 0 ? '今日上涨' : '今日下跌'}</span>
                 </p>
               </button>
@@ -2863,7 +2885,7 @@ function DiscoverView({
                   <span>{stock.code} · {stock.industry}</span>
                 </div>
                 <em className={trendClass(stock.performance.day)}>
-                  {formatPercent(stock.performance.day)}
+                  {displayStockMove(stock)}
                 </em>
               </button>
             ))}
@@ -2936,7 +2958,7 @@ function MoverGroup({ label, stocks, maxMove, onSelect }) {
           >
             <div className="mover-info">
               <strong>{stock.name}</strong>
-              <span>{stock.code} · ¥{stock.price}/股</span>
+              <span>{stock.code} · {hasLivePrice(stock) ? `¥${stock.price}/股` : '行情待同步'}</span>
             </div>
             <Sparkline points={stock.sparkline} positive={move >= 0} />
             <div className={move >= 0 ? 'mover-change is-up' : 'mover-change is-down'}>
@@ -3162,12 +3184,12 @@ function KLineView({ stock, setActiveTab, returnTab, candles }) {
           <div>
             <span>今日涨跌</span>
             <strong className={trendClass(stock.performance.day)}>
-              {formatPercent(stock.performance.day)}
+              {displayStockMove(stock)}
             </strong>
           </div>
           <div>
             <span>当前价</span>
-            <strong>{stock.price}</strong>
+            <strong>{displayStockPrice(stock)}</strong>
           </div>
         </div>
         <KLineChart stock={stock} candles={displayCandles} />
@@ -3481,7 +3503,7 @@ function PortfolioView({
                   <span>{stock.code} · {stock.industry}</span>
                 </div>
                 <em className={trendClass(stock.performance.day)}>
-                  {formatPercent(stock.performance.day)}
+                  {displayStockMove(stock)}
                 </em>
               </button>
             ))}
@@ -3823,6 +3845,17 @@ function ProfileView({
               </div>
             ))}
           </div>
+          {systemStatus.checks?.tasks?.errors?.length > 0 && (
+            <div className="task-error-list">
+              {systemStatus.checks.tasks.errors.map((item) => (
+                <div key={item.taskId}>
+                  <span>{item.taskId}</span>
+                  <strong>{item.lastMessage || item.lastError || '等待后台重试'}</strong>
+                  <em>连续失败 {item.consecutiveFailures} 次，系统会缩短间隔自动重试。</em>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       )}
 
@@ -4360,7 +4393,7 @@ function WatchView({
                 <div className="watch-market">
                   <Sparkline points={stock.sparkline} positive={stock.performance.day >= 0} />
                   <strong className={`watch-change ${trendClass(stock.performance.day)}`}>
-                    {formatPercent(stock.performance.day)}
+                    {displayStockMove(stock)}
                   </strong>
                   <span>今日涨跌</span>
                 </div>
