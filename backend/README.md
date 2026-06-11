@@ -1,6 +1,6 @@
 # 股镜后端
 
-这是股镜 App 的第一版本地后端，用 FastAPI + SQLite 承载前端已经成型的数据结构。
+这是股镜 App 的第一版本地后端，用 FastAPI 承载前端已经成型的数据结构。本地默认使用 SQLite；部署到 Render 或其他线上环境时，可以通过 `DATABASE_URL` 自动切换到 PostgreSQL。
 
 ## 本地启动
 
@@ -20,6 +20,25 @@ backend/.venv/bin/python -m uvicorn main:app --reload --reload-exclude 'backend/
 ```bash
 npm run backend:test
 ```
+
+## 数据库
+
+本地开发默认使用 SQLite 文件：
+
+```bash
+backend/gujing.db
+```
+
+线上部署建议使用 PostgreSQL，设置环境变量后后端会自动切换：
+
+```bash
+export DATABASE_URL="postgresql://user:password@host:5432/dbname"
+npm run backend
+```
+
+`render.yaml` 已经配置 `gujing-db` 并把连接串注入 `DATABASE_URL`。Render 免费 PostgreSQL 适合测试部署，但有免费期限和资源限制；正式上线前建议换成 Render 付费数据库或 Neon/Supabase/RDS 这类持久数据库。
+
+切换到 PostgreSQL 后，账号、登录设备、持仓、观察池、提醒规则、交易流水、分析快照和任务日志都会写入持久数据库，不再依赖 Render Web 服务的临时文件系统。
 
 ## 当前接口
 

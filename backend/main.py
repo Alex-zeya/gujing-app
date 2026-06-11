@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import time
 import secrets
@@ -21,6 +22,8 @@ from pydantic import BaseModel, Field
 
 
 DB_PATH = Path(os.getenv("GUJING_DB_PATH", Path(__file__).with_name("gujing.db")))
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+USING_POSTGRES = DATABASE_URL.startswith(("postgres://", "postgresql://"))
 DEFAULT_USER_ID = "default_user"
 DEFAULT_USER_PROFILE = {
     "id": DEFAULT_USER_ID,
@@ -521,8 +524,69 @@ def eastmoney_secid(code: str) -> str:
     return f"{market}.{clean}"
 
 
+def translate_sql_for_postgres(sql: str) -> str:
+    translated = sql.strip()
+    translated = translated.replace("datetime(expires_at) <= datetime('now')", "expires_at::timestamp <= CURRENT_TIMESTAMP")
+    translated = translated.replace("datetime(expires_at) > datetime('now')", "expires_at::timestamp > CURRENT_TIMESTAMP")
+    if re.match(r"^INSERT\s+OR\s+REPLACE\s+INTO\s+stocks\s*\(", translated, re.IGNORECASE):
+        translated = re.sub(
+            r"^INSERT\s+OR\s+REPLACE\s+INTO\s+stocks",
+            "INSERT INTO stocks",
+            translated,
+            flags=re.IGNORECASE,
+        )
+        if "ON CONFLICT" not in translated.upper():
+            translated += " ON CONFLICT(code) DO UPDATE SET payload = EXCLUDED.payload"
+    elif re.match(r"^INSERT\s+OR\s+IGNORE\s+INTO\s+", translated, re.IGNORECASE):
+        translated = re.sub(
+            r"^INSERT\s+OR\s+IGNORE\s+INTO\s+",
+            "INSERT INTO ",
+            translated,
+            flags=re.IGNORECASE,
+        )
+        if "ON CONFLICT" not in translated.upper():
+            translated += " ON CONFLICT DO NOTHING"
+    return translated.replace("?", "%s")
+
+
+class PostgresCompatConnection:
+    def __init__(self, connection: Any):
+        self.connection = connection
+
+    def execute(self, sql: str, params: tuple[Any, ...] | list[Any] | None = None) -> Any:
+        return self.connection.execute(translate_sql_for_postgres(sql), params)
+
+    def executemany(self, sql: str, params: list[tuple[Any, ...]] | tuple[tuple[Any, ...], ...]) -> Any:
+        return self.connection.executemany(translate_sql_for_postgres(sql), params)
+
+    def commit(self) -> None:
+        self.connection.commit()
+
+    def rollback(self) -> None:
+        self.connection.rollback()
+
+    def close(self) -> None:
+        self.connection.close()
+
+
 @contextmanager
-def connect() -> sqlite3.Connection:
+def connect() -> Any:
+    if USING_POSTGRES:
+        import psycopg
+        from psycopg.rows import dict_row
+
+        db = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+        compat = PostgresCompatConnection(db)
+        try:
+            yield compat
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+        return
+
     db = sqlite3.connect(DB_PATH)
     db.row_factory = sqlite3.Row
     try:
@@ -530,6 +594,50 @@ def connect() -> sqlite3.Connection:
             yield db
     finally:
         db.close()
+
+
+def table_columns(db: Any, table: str) -> set[str]:
+    if USING_POSTGRES:
+        rows = db.execute(
+            """
+            SELECT column_name AS name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = ?
+            """,
+            (table,),
+        ).fetchall()
+        return {row["name"] for row in rows}
+    return {row["name"] for row in db.execute(f"PRAGMA table_info({table})").fetchall()}
+
+
+def primary_key_columns(db: Any, table: str) -> list[str]:
+    if USING_POSTGRES:
+        rows = db.execute(
+            """
+            SELECT kcu.column_name AS name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+              ON tc.constraint_name = kcu.constraint_name
+             AND tc.table_schema = kcu.table_schema
+            WHERE tc.table_schema = 'public'
+              AND tc.table_name = ?
+              AND tc.constraint_type = 'PRIMARY KEY'
+            ORDER BY kcu.ordinal_position
+            """,
+            (table,),
+        ).fetchall()
+        return [row["name"] for row in rows]
+    return [row["name"] for row in db.execute(f"PRAGMA table_info({table})").fetchall() if row["pk"]]
+
+
+def database_tables(db: Any) -> set[str]:
+    if USING_POSTGRES:
+        rows = db.execute(
+            "SELECT tablename AS name FROM pg_tables WHERE schemaname = 'public'"
+        ).fetchall()
+        return {row["name"] for row in rows}
+    rows = db.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
+    return {row["name"] for row in rows}
 
 
 def to_json(value: Any) -> str:
@@ -4104,9 +4212,7 @@ def init_db() -> None:
             )
             """
         )
-        existing_user_columns = {
-            row["name"] for row in db.execute("PRAGMA table_info(users)").fetchall()
-        }
+        existing_user_columns = table_columns(db, "users")
         if "phone" not in existing_user_columns:
             db.execute("ALTER TABLE users ADD COLUMN phone TEXT")
         if "wechat_openid" not in existing_user_columns:
@@ -4147,9 +4253,7 @@ def init_db() -> None:
             )
             """
         )
-        existing_session_columns = {
-            row["name"] for row in db.execute("PRAGMA table_info(auth_sessions)").fetchall()
-        }
+        existing_session_columns = table_columns(db, "auth_sessions")
         if "device_name" not in existing_session_columns:
             db.execute("ALTER TABLE auth_sessions ADD COLUMN device_name TEXT DEFAULT 'Web 设备'")
         if "user_agent" not in existing_session_columns:
@@ -4297,26 +4401,20 @@ def init_db() -> None:
             )
             """
         )
-        existing_watchlist_columns = {
-            row["name"] for row in db.execute("PRAGMA table_info(watchlist)").fetchall()
-        }
+        existing_watchlist_columns = table_columns(db, "watchlist")
         if "user_id" not in existing_watchlist_columns:
             db.execute("ALTER TABLE watchlist ADD COLUMN user_id TEXT DEFAULT 'default_user'")
-        existing_portfolio_columns = {
-            row["name"] for row in db.execute("PRAGMA table_info(portfolio)").fetchall()
-        }
+        existing_portfolio_columns = table_columns(db, "portfolio")
         if "user_id" not in existing_portfolio_columns:
             db.execute("ALTER TABLE portfolio ADD COLUMN user_id TEXT DEFAULT 'default_user'")
         if "shares" not in existing_portfolio_columns:
             db.execute("ALTER TABLE portfolio ADD COLUMN shares INTEGER")
         if "cost_price" not in existing_portfolio_columns:
             db.execute("ALTER TABLE portfolio ADD COLUMN cost_price REAL")
-        existing_advice_columns = {
-            row["name"] for row in db.execute("PRAGMA table_info(portfolio_advice_snapshots)").fetchall()
-        }
+        existing_advice_columns = table_columns(db, "portfolio_advice_snapshots")
         if "model_version" not in existing_advice_columns:
             db.execute("ALTER TABLE portfolio_advice_snapshots ADD COLUMN model_version TEXT DEFAULT 'advice-v1'")
-        watchlist_pk = [row["name"] for row in db.execute("PRAGMA table_info(watchlist)").fetchall() if row["pk"]]
+        watchlist_pk = primary_key_columns(db, "watchlist")
         if watchlist_pk == ["code"]:
             db.execute(
                 """
@@ -4336,7 +4434,7 @@ def init_db() -> None:
             )
             db.execute("DROP TABLE watchlist")
             db.execute("ALTER TABLE watchlist_next RENAME TO watchlist")
-        portfolio_pk = [row["name"] for row in db.execute("PRAGMA table_info(portfolio)").fetchall() if row["pk"]]
+        portfolio_pk = primary_key_columns(db, "portfolio")
         if portfolio_pk == ["code"]:
             db.execute(
                 """
@@ -4402,9 +4500,7 @@ def init_db() -> None:
             )
             """
         )
-        existing_alert_columns = {
-            row["name"] for row in db.execute("PRAGMA table_info(alert_events)").fetchall()
-        }
+        existing_alert_columns = table_columns(db, "alert_events")
         if "user_id" not in existing_alert_columns:
             db.execute("ALTER TABLE alert_events ADD COLUMN user_id TEXT DEFAULT 'default_user'")
         db.execute(
@@ -5249,18 +5345,24 @@ def database_readiness() -> dict[str, Any]:
     }
     try:
         with connect() as db:
-            rows = db.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
-            tables = {row["name"] for row in rows}
+            tables = database_tables(db)
             stock_count = db.execute("SELECT COUNT(*) AS count FROM stocks").fetchone()["count"]
         missing = sorted(required_tables - tables)
+        mode = "postgres" if USING_POSTGRES else "sqlite"
         return {
             "ok": not missing,
-            "path": str(DB_PATH),
+            "mode": mode,
+            "path": str(DB_PATH) if not USING_POSTGRES else "DATABASE_URL",
             "stockCount": int(stock_count or 0),
             "missingTables": missing,
         }
     except Exception as error:
-        return {"ok": False, "path": str(DB_PATH), "error": type(error).__name__}
+        return {
+            "ok": False,
+            "mode": "postgres" if USING_POSTGRES else "sqlite",
+            "path": str(DB_PATH) if not USING_POSTGRES else "DATABASE_URL",
+            "error": type(error).__name__,
+        }
 
 
 def system_readiness_payload() -> dict[str, Any]:

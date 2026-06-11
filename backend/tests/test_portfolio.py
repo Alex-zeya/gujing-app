@@ -636,6 +636,31 @@ class PortfolioFlowTest(unittest.TestCase):
         self.assertIn("tasks", status)
         self.assertTrue(any(task["taskId"] == "alert_check" for task in status["tasks"]))
 
+    def test_postgres_sql_translation_keeps_existing_queries_portable(self):
+        ignore_sql = self.backend.translate_sql_for_postgres(
+            "INSERT OR IGNORE INTO watchlist (code, user_id) VALUES (?, ?)"
+        )
+        replace_sql = self.backend.translate_sql_for_postgres(
+            "INSERT OR REPLACE INTO stocks (code, payload) VALUES (?, ?)"
+        )
+        expiry_sql = self.backend.translate_sql_for_postgres(
+            "DELETE FROM auth_sessions WHERE datetime(expires_at) <= datetime('now')"
+        )
+
+        self.assertIn("INSERT INTO watchlist", ignore_sql)
+        self.assertIn("ON CONFLICT DO NOTHING", ignore_sql)
+        self.assertIn("%s", ignore_sql)
+        self.assertIn("ON CONFLICT(code) DO UPDATE", replace_sql)
+        self.assertIn("EXCLUDED.payload", replace_sql)
+        self.assertIn("expires_at::timestamp <= CURRENT_TIMESTAMP", expiry_sql)
+
+    def test_database_readiness_reports_sqlite_mode_locally(self):
+        readiness = self.backend.database_readiness()
+
+        self.assertTrue(readiness["ok"])
+        self.assertEqual(readiness["mode"], "sqlite")
+        self.assertGreater(readiness["stockCount"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
