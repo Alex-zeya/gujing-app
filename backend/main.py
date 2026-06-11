@@ -1108,7 +1108,7 @@ def stock_directory_rows(keyword: str = "", limit: int = 50) -> list[dict[str, s
     raw_term = keyword.strip()
     code_term = clean_code(raw_term)
     normalized_term = raw_term.lower()
-    limit = min(max(int(limit or 50), 1), 200)
+    limit = min(max(int(limit or 50), 1), 10000)
     params: list[Any] = []
     where = ""
     if raw_term:
@@ -1192,7 +1192,10 @@ def directory_matches(keyword: str, limit: int = 25, allow_network: bool = False
     normalized_term = raw_term.lower()
     code_term = clean_code(raw_term)
     scored_matches: list[tuple[float, dict[str, Any]]] = []
-    for item in stock_directory_items(allow_network=allow_network):
+    directory_items = stock_directory_rows(keyword=raw_term, limit=max(limit * 8, 80))
+    if not directory_items:
+        directory_items = stock_directory_items(allow_network=allow_network)
+    for item in directory_items:
         code = clean_code(item["code"])
         name = item["name"].strip()
         industry = item.get("industry", "A股")
