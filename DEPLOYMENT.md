@@ -19,17 +19,18 @@
 - `APP_ENV=production`：生产模式，验证码不再默认使用 `123456`。
 - `PORT`：云平台注入端口，Docker 启动命令会读取它。
 - `CORS_ORIGINS`：允许访问后端的前端来源，用英文逗号分隔。
-- `GUJING_DB_PATH`：SQLite 数据库路径。云平台上应指向持久化磁盘，比如 `/data/gujing.db`。
+- `GUJING_DB_PATH`：SQLite 数据库路径。免费测试部署可以不填；如果之后要长期保存真实用户数据，应改用 Postgres 或付费持久化磁盘。
 - `SMS_PROVIDER`：前期可以用 `mock` 测试，正式短信需要换成 `aliyun` 或 `tencent` 并配置对应密钥。
 - `TUSHARE_TOKEN`：历史 K 线数据 token。
 
 ## Render
 
-仓库里已经提供 `render.yaml`，可以用 Render Blueprint 创建服务。Render FastAPI 官方文档也支持直接创建 Web Service 并配置 Docker 构建。
+仓库里已经提供 `render.yaml`，默认使用 Render Free Web Service，适合先把 iPhone 端连到稳定 HTTPS 后端。Render FastAPI 官方文档也支持直接创建 Web Service 并配置 Docker 构建。
 
 注意：
 
 - `render.yaml` 里当前 `SMS_PROVIDER=mock`，只适合测试。
+- Render Free 服务空闲一段时间会休眠，第一次打开可能需要等待几十秒；免费文件系统也不会长期保存本地 SQLite 数据。
 - `CORS_ORIGINS` 需要在拿到正式前端域名后补上。
 - SQLite 必须挂载持久化磁盘，否则服务重建后数据会丢。
 
