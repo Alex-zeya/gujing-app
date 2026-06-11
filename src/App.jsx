@@ -610,14 +610,23 @@ function localStockSuggestions(value, stockMap = stocks, limit = 6) {
 }
 
 function mergeStockLists(primary, secondary, limit = 8) {
-  const seen = new Set()
-  return [...primary, ...secondary]
-    .filter((stock) => {
-      if (!stock?.code || seen.has(stock.code)) return false
-      seen.add(stock.code)
-      return true
-    })
-    .slice(0, limit)
+  const order = []
+  const byCode = new Map()
+  const liveScore = (stock) => {
+    const price = Number(String(stock?.price ?? 0).replace(/,/g, ''))
+    return (price > 0 ? 2 : 0) + (stock?.quoteStats?.source ? 1 : 0) + (stock?.dataCoverage?.quote ? 1 : 0)
+  }
+
+  ;[...primary, ...secondary].forEach((stock) => {
+    if (!stock?.code) return
+    if (!byCode.has(stock.code)) order.push(stock.code)
+    const existing = byCode.get(stock.code)
+    if (!existing || liveScore(stock) >= liveScore(existing)) {
+      byCode.set(stock.code, { ...existing, ...stock })
+    }
+  })
+
+  return order.map((code) => byCode.get(code)).filter(Boolean).slice(0, limit)
 }
 
 function buildStockDecision(stock) {
@@ -806,6 +815,7 @@ function App() {
   const [recentSearches, setRecentSearches] = useState(getStoredRecentSearches)
   const [draft, setDraft] = useState({ code: '', amount: '' })
   const [hasAnalyzed, setHasAnalyzed] = useState(false)
+  const [analysisFocusToken, setAnalysisFocusToken] = useState(0)
   const [apiStatus, setApiStatus] = useState('connecting')
   const [dataStatus, setDataStatus] = useState(null)
   const [taskStatus, setTaskStatus] = useState(null)
@@ -1236,6 +1246,7 @@ function App() {
     setSelectedCode(clean)
     setQuery(displayValue)
     setHasAnalyzed(true)
+    setAnalysisFocusToken((current) => current + 1)
     void hydrateStockForAnalysis(clean)
     setSearchSuggestions([])
     setIsSearchFocused(false)
@@ -1843,6 +1854,8 @@ function App() {
             marketStocks={marketStocks}
             selectedStock={selectedStock}
             hasAnalyzed={hasAnalyzed}
+            analysisFocusToken={analysisFocusToken}
+            screenRef={screenRef}
             addStockToPortfolio={openPortfolioPrompt}
             addStockToWatchlist={addStockToWatchlist}
           />
@@ -2637,6 +2650,8 @@ function DiscoverView({
   marketStocks,
   selectedStock,
   hasAnalyzed,
+  analysisFocusToken,
+  screenRef,
   addStockToPortfolio,
   addStockToWatchlist,
 }) {
@@ -2662,6 +2677,7 @@ function DiscoverView({
     .slice(0, 10)
   const tickerStocks = focusStocks.length ? [...focusStocks, ...focusStocks, ...focusStocks] : []
   const tickerRef = useRef(null)
+  const analysisRef = useRef(null)
   const isTickerPausedRef = useRef(false)
   const tickerResumeTimerRef = useRef(null)
   const tickerKey = focusStocks.map((stock) => stock.code).join(',')
@@ -2669,6 +2685,19 @@ function DiscoverView({
     ? selectedStock
     : leader
   const showSuggestions = isSearchFocused && query.trim() && searchSuggestions.length > 0
+
+  useEffect(() => {
+    if (!analysisFocusToken || !analysisRef.current) return
+    const frameId = window.requestAnimationFrame(() => {
+      const screen = screenRef?.current ?? analysisRef.current?.closest('.screen')
+      if (!screen || !analysisRef.current) return
+      const screenRect = screen.getBoundingClientRect()
+      const targetRect = analysisRef.current.getBoundingClientRect()
+      const targetTop = screen.scrollTop + targetRect.top - screenRect.top - 12
+      screen.scrollTo({ top: Math.max(0, targetTop), left: 0, behavior: 'smooth' })
+    })
+    return () => window.cancelAnimationFrame(frameId)
+  }, [analysisFocusToken, screenRef])
 
   useEffect(() => {
     const ticker = tickerRef.current
@@ -2855,14 +2884,14 @@ function DiscoverView({
       </form>
 
       {hasAnalyzed && (
-        <>
+        <div className="analysis-results" ref={analysisRef}>
           <PriceChart stock={chartStock} />
           <StockDecisionPanel
             stock={chartStock}
             addStockToPortfolio={addStockToPortfolio}
             addStockToWatchlist={addStockToWatchlist}
           />
-        </>
+        </div>
       )}
 
       <section className="panel">
