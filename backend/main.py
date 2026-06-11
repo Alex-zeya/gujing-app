@@ -4535,7 +4535,8 @@ def auth_sms_send(payload: PhoneCodePayload) -> dict[str, Any]:
     phone = clean_phone(payload.phone)
     if not phone:
         raise HTTPException(status_code=422, detail="invalid phone")
-    code = "123456" if os.getenv("APP_ENV") != "production" else f"{secrets.randbelow(1_000_000):06d}"
+    is_mock_sms = SMS_PROVIDER == "mock"
+    code = "123456" if is_mock_sms or os.getenv("APP_ENV") != "production" else f"{secrets.randbelow(1_000_000):06d}"
     expires_at = (datetime.now() + timedelta(minutes=SMS_CODE_EXPIRE_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")
     send_result = send_sms_code(phone, code)
     with connect() as db:
@@ -4571,7 +4572,7 @@ def auth_sms_send(payload: PhoneCodePayload) -> dict[str, Any]:
         "providerName": send_result["name"],
         "message": send_result["message"],
     }
-    if os.getenv("APP_ENV") != "production":
+    if is_mock_sms or os.getenv("APP_ENV") != "production":
         response["devCode"] = code
     return response
 
@@ -4619,7 +4620,7 @@ def auth_sms_login(
             """,
             (phone,),
         ).fetchone()
-    is_dev_code = os.getenv("APP_ENV") != "production" and payload.code == "123456"
+    is_dev_code = (SMS_PROVIDER == "mock" or os.getenv("APP_ENV") != "production") and payload.code == "123456"
     if not row and not is_dev_code:
         raise HTTPException(status_code=401, detail="code not found")
     if row and parse_refresh_time(row["expires_at"]) and datetime.now() > parse_refresh_time(row["expires_at"]):

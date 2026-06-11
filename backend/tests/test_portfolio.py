@@ -372,6 +372,27 @@ class PortfolioFlowTest(unittest.TestCase):
         self.assertTrue(any("电气" in name for name in names))
         self.assertIn("上海电气", names)
 
+    def test_mock_sms_returns_dev_code_in_production_mode(self):
+        original_env = self.backend.os.environ.get("APP_ENV")
+        original_sms_provider = self.backend.SMS_PROVIDER
+        self.backend.os.environ["APP_ENV"] = "production"
+        self.backend.SMS_PROVIDER = "mock"
+        try:
+            sent = self.backend.auth_sms_send(self.backend.PhoneCodePayload(phone="15995270070"))
+            self.assertEqual(sent["devCode"], "123456")
+            logged_in = self.backend.auth_sms_login(
+                self.backend.PhoneLoginPayload(phone="15995270070", code="123456"),
+                user_agent="unit-test",
+                x_device_name="unit-test",
+            )
+            self.assertTrue(logged_in["authenticated"])
+        finally:
+            self.backend.SMS_PROVIDER = original_sms_provider
+            if original_env is None:
+                self.backend.os.environ.pop("APP_ENV", None)
+            else:
+                self.backend.os.environ["APP_ENV"] = original_env
+
     def test_user_export_contains_portfolio_records(self):
         self.backend.portfolio_upsert(
             self.backend.PortfolioPayload(
