@@ -1651,17 +1651,18 @@ function App() {
   async function refreshMarketData() {
     setIsRefreshingData(true)
     try {
-      const providerStatus = await apiJson('/api/data/refresh', {
+      await apiJson('/api/data/refresh', {
         method: 'POST',
         body: JSON.stringify({ codes: marketStocks.map((stock) => stock.code) }),
       })
-      const [stockList, overview, recommendations, portfolioSnapshot, insights, alertFeed, taskData, userData, readiness] = await Promise.all([
+      const [stockList, overview, recommendations, portfolioSnapshot, insights, alertFeed, providerStatus, taskData, userData, readiness] = await Promise.all([
         apiJson('/api/stocks'),
         apiJson('/api/market/overview'),
         apiJson('/api/recommendations/today'),
         apiJson('/api/portfolio'),
         apiJson('/api/portfolio/insights'),
         apiJson('/api/alerts/events'),
+        apiJson('/api/data/status'),
         apiJson('/api/tasks/status'),
         apiJson('/api/user/summary'),
         apiJson('/api/system/readiness'),
@@ -4255,6 +4256,10 @@ function WatchView({
       title: '提醒触发',
       userText: '价格突破、涨跌幅过大、公告财报更新时准备系统通知。',
     },
+    stock_directory: {
+      title: 'A股目录',
+      userText: '每天同步股票代码和企业名称，让中文搜索覆盖更多 A 股。',
+    },
     market_universe: {
       title: '市场扫描',
       userText: '刷新全市场强弱，给首页推荐和涨跌榜提供依据。',
@@ -4489,6 +4494,12 @@ function WatchView({
           </strong>
         </div>
         <p>{dataStatus?.message ?? '接入授权行情后，可切换为实时、延迟 15 分钟或盘后更新。'}</p>
+        {dataStatus?.stockDirectory && (
+          <p>
+            股票目录：{dataStatus.stockDirectory.count ?? 0} 只
+            {dataStatus.stockDirectory.mode === 'live' ? '，已接入全量名称库' : '，等待后台同步'}
+          </p>
+        )}
         {dataStatus?.lastRefresh && <em>最近刷新：{dataStatus.lastRefresh}</em>}
         <button type="button" onClick={refreshMarketData} disabled={isRefreshingData}>
           {isRefreshingData ? '刷新中...' : '刷新行情'}
@@ -4559,9 +4570,10 @@ function WatchView({
         <div>
           <strong>最近进度</strong>
           <ul>
+            <li>已新增全量 A 股股票目录库，支持企业名称、关键词和代码搜索</li>
             <li>已支持买入、减仓、修改成本和持仓流水</li>
-            <li>持仓页默认快速读取缓存，避免行情源卡住页面</li>
-            <li>下一步会继续完善通知、交易记录和个性化建议</li>
+            <li>后台会自动同步目录、行情、观察提醒和新闻缓存</li>
+            <li>下一步会继续完善上架材料、稳定性监控和真实通知服务</li>
           </ul>
         </div>
       </section>

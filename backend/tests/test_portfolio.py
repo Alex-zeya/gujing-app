@@ -372,6 +372,25 @@ class PortfolioFlowTest(unittest.TestCase):
         self.assertTrue(any("电气" in name for name in names))
         self.assertIn("上海电气", names)
 
+    def test_stock_directory_refresh_expands_search_results(self):
+        def fake_directory():
+            return [
+                {"code": "123456", "name": "未来电气", "industry": "电气设备"},
+                {"code": "654321", "name": "未来医疗", "industry": "医疗"},
+            ]
+
+        self.backend.fetch_akshare_stock_directory = fake_directory
+        status = self.backend.refresh_stock_directory(force=True)
+        self.assertEqual(status["mode"], "live")
+        self.assertGreaterEqual(status["count"], 2)
+
+        rows = self.backend.stock_directory_rows("未来", limit=10)
+        self.assertIn("未来电气", [row["name"] for row in rows])
+
+        matches = self.backend.stocks_search("未来电气")
+        self.assertEqual(matches[0]["code"], "123456")
+        self.assertEqual(matches[0]["name"], "未来电气")
+
     def test_mock_sms_returns_dev_code_in_production_mode(self):
         original_env = self.backend.os.environ.get("APP_ENV")
         original_sms_provider = self.backend.SMS_PROVIDER

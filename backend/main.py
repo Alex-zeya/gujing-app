@@ -325,8 +325,16 @@ DEFAULT_DATA_STATUS = {
     "message": "当前使用演示数据。",
     "refreshedCodes": [],
 }
+DEFAULT_DIRECTORY_STATUS = {
+    "mode": "seed",
+    "source": "seed",
+    "lastRefresh": None,
+    "message": "当前使用内置股票目录，后台会自动同步全量 A 股名称。",
+    "count": len(A_STOCK_SEARCH_SEEDS),
+}
 
 MARKET_REFRESH_MINUTES = 15
+DIRECTORY_REFRESH_MINUTES = 24 * 60
 ALERT_CHECK_INTERVAL_MINUTES = 15
 QUOTE_CACHE_MINUTES = 3
 HISTORY_CACHE_MINUTES = 12 * 60
@@ -337,6 +345,7 @@ BACKGROUND_TASKS = {
     "watchlist_quotes": {"label": "观察池行情刷新", "intervalMinutes": QUOTE_CACHE_MINUTES},
     "news_cache": {"label": "新闻公告缓存", "intervalMinutes": NEWS_CACHE_MINUTES},
     "alert_check": {"label": "提醒规则检查", "intervalMinutes": ALERT_CHECK_INTERVAL_MINUTES},
+    "stock_directory": {"label": "A股股票目录同步", "intervalMinutes": DIRECTORY_REFRESH_MINUTES},
     "market_universe": {"label": "全市场行情同步", "intervalMinutes": MARKET_REFRESH_MINUTES},
 }
 
@@ -345,6 +354,7 @@ RATE_LIMIT_RULES = {
     "/api/auth/sms/login": {"limit": 12, "windowSeconds": 300},
     "/api/data/refresh": {"limit": 20, "windowSeconds": 300},
     "/api/data/sync-universe": {"limit": 6, "windowSeconds": 300},
+    "/api/data/sync-stock-directory": {"limit": 4, "windowSeconds": 300},
     "/api/stocks/search": {"limit": 90, "windowSeconds": 60},
 }
 RATE_LIMIT_BUCKETS: dict[str, list[float]] = {}
@@ -963,31 +973,215 @@ def build_stock_from_directory(code: str, name: str, industry: str = "A股") -> 
     }
 
 
+def normalize_directory_item(item: dict[str, Any], source: str = "seed") -> dict[str, str]:
+    code = clean_code(str(item.get("code", "")))
+    name = str(item.get("name", "")).strip()
+    industry = str(item.get("industry") or item.get("category") or "A股").strip() or "A股"
+    initials = pinyin_initials(name)
+    search_text = f"{code} {name.lower()} {initials} {industry.lower()}"
+    return {
+        "code": code,
+        "name": name,
+        "industry": industry,
+        "initials": initials,
+        "searchText": search_text,
+        "source": source,
+    }
+
+
+def save_directory_status(status: dict[str, Any]) -> dict[str, Any]:
+    with connect() as db:
+        db.execute(
+            """
+            INSERT INTO app_settings (key, payload)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET payload = excluded.payload
+            """,
+            ("stock_directory_status", to_json(status)),
+        )
+    return status
+
+
+def get_directory_status() -> dict[str, Any]:
+    with connect() as db:
+        row = db.execute("SELECT payload FROM app_settings WHERE key = ?", ("stock_directory_status",)).fetchone()
+        count_row = db.execute("SELECT COUNT(*) AS count FROM stock_directory").fetchone()
+    count = int(count_row["count"] or 0) if count_row else 0
+    base = from_json(row["payload"]) if row else DEFAULT_DIRECTORY_STATUS
+    return {**base, "count": count or int(base.get("count") or 0)}
+
+
+def stock_directory_is_stale(max_age_minutes: int = DIRECTORY_REFRESH_MINUTES) -> bool:
+    status = get_directory_status()
+    return timestamp_is_stale(status.get("lastRefresh"), max_age_minutes)
+
+
+def upsert_stock_directory(items: list[dict[str, Any]], source: str) -> int:
+    normalized = []
+    seen: set[str] = set()
+    for item in items:
+        next_item = normalize_directory_item(item, source)
+        if len(next_item["code"]) != 6 or not next_item["name"] or next_item["code"] in seen:
+            continue
+        seen.add(next_item["code"])
+        normalized.append(next_item)
+    if not normalized:
+        return 0
+    now = now_text()
+    with connect() as db:
+        db.executemany(
+            """
+            INSERT INTO stock_directory (
+              code, name, industry, initials, search_text, source, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(code) DO UPDATE SET
+              name = excluded.name,
+              industry = excluded.industry,
+              initials = excluded.initials,
+              search_text = excluded.search_text,
+              source = excluded.source,
+              updated_at = excluded.updated_at
+            """,
+            [
+                (
+                    item["code"],
+                    item["name"],
+                    item["industry"],
+                    item["initials"],
+                    item["searchText"],
+                    item["source"],
+                    now,
+                )
+                for item in normalized
+            ],
+        )
+    return len(normalized)
+
+
+def seed_stock_directory() -> int:
+    return upsert_stock_directory(A_STOCK_SEARCH_SEEDS, "seed")
+
+
+def fetch_akshare_stock_directory() -> list[dict[str, str]]:
+    import akshare as ak
+
+    frame = ak.stock_info_a_code_name()
+    code_column = "code" if "code" in frame.columns else "代码"
+    name_column = "name" if "name" in frame.columns else "名称"
+    items = []
+    for _, row in frame.iterrows():
+        code = clean_code(str(row.get(code_column, "")))
+        name = str(row.get(name_column, "")).strip()
+        if len(code) == 6 and name:
+            items.append({"code": code, "name": name, "industry": "A股"})
+    return items
+
+
+def refresh_stock_directory(force: bool = False) -> dict[str, Any]:
+    if not force and not stock_directory_is_stale():
+        return get_directory_status()
+    items = list(A_STOCK_SEARCH_SEEDS)
+    source = "seed"
+    errors: list[str] = []
+    try:
+        fetched_items = fetch_akshare_stock_directory()
+        if fetched_items:
+            items.extend(fetched_items)
+            source = "akshare:stock_info_a_code_name"
+    except Exception as error:
+        errors.append(type(error).__name__)
+    count = upsert_stock_directory(items, source)
+    STOCK_DIRECTORY_CACHE.clear()
+    status = {
+        "mode": "live" if source.startswith("akshare") else "seed",
+        "source": source,
+        "lastRefresh": now_text(),
+        "message": f"已同步 A股股票名称目录，共 {count} 只。" if count else "股票目录同步失败，继续使用已有缓存。",
+        "count": count or get_directory_status().get("count", 0),
+        "errors": errors,
+    }
+    return save_directory_status(status)
+
+
+def stock_directory_rows(keyword: str = "", limit: int = 50) -> list[dict[str, str]]:
+    raw_term = keyword.strip()
+    code_term = clean_code(raw_term)
+    normalized_term = raw_term.lower()
+    limit = min(max(int(limit or 50), 1), 200)
+    params: list[Any] = []
+    where = ""
+    if raw_term:
+        like_terms = [f"{normalized_term}%", f"%{normalized_term}%", f"{code_term}%", f"%{code_term}%"]
+        where = """
+            WHERE name LIKE ?
+               OR name LIKE ?
+               OR code LIKE ?
+               OR code LIKE ?
+               OR initials LIKE ?
+               OR search_text LIKE ?
+        """
+        params = [like_terms[0], like_terms[1], like_terms[2], like_terms[3], f"{normalized_term}%", f"%{normalized_term}%"]
+    with connect() as db:
+        rows = db.execute(
+            f"""
+            SELECT code, name, industry, initials, source, updated_at
+            FROM stock_directory
+            {where}
+            ORDER BY
+              CASE
+                WHEN code = ? THEN 0
+                WHEN name = ? THEN 1
+                WHEN code LIKE ? THEN 2
+                WHEN name LIKE ? THEN 3
+                WHEN initials LIKE ? THEN 4
+                ELSE 9
+              END,
+              code
+            LIMIT ?
+            """,
+            [
+                *params,
+                code_term,
+                raw_term,
+                f"{code_term}%",
+                f"{normalized_term}%",
+                f"{normalized_term}%",
+                limit,
+            ],
+        ).fetchall()
+    return [
+        {
+            "code": row["code"],
+            "name": row["name"],
+            "industry": row["industry"],
+            "initials": row["initials"],
+            "source": row["source"],
+            "updatedAt": row["updated_at"],
+        }
+        for row in rows
+    ]
+
+
 def stock_directory_items(max_age_minutes: int = 24 * 60, allow_network: bool = True) -> list[dict[str, str]]:
+    rows = stock_directory_rows(limit=8000)
+    if rows and (not allow_network or not stock_directory_is_stale(max_age_minutes)):
+        STOCK_DIRECTORY_CACHE.update({"loadedAt": time.time(), "items": rows, "fullLoaded": len(rows) > len(A_STOCK_SEARCH_SEEDS)})
+        return rows
     loaded_at = float(STOCK_DIRECTORY_CACHE.get("loadedAt") or 0)
     is_fresh = time.time() - loaded_at < max_age_minutes * 60
     is_full_directory = bool(STOCK_DIRECTORY_CACHE.get("fullLoaded"))
     if STOCK_DIRECTORY_CACHE.get("items") and is_fresh and (is_full_directory or not allow_network):
         return STOCK_DIRECTORY_CACHE["items"]
     items = list(A_STOCK_SEARCH_SEEDS)
-    full_loaded = False
     if allow_network:
-        try:
-            import akshare as ak
-
-            frame = ak.stock_info_a_code_name()
-            code_column = "code" if "code" in frame.columns else "代码"
-            name_column = "name" if "name" in frame.columns else "名称"
-            for _, row in frame.iterrows():
-                code = clean_code(str(row.get(code_column, "")))
-                name = str(row.get(name_column, "")).strip()
-                if len(code) == 6 and name:
-                    items.append({"code": code, "name": name, "industry": "A股"})
-            full_loaded = True
-        except Exception:
-            pass
+        refresh_stock_directory(force=True)
+        rows = stock_directory_rows(limit=8000)
+        if rows:
+            STOCK_DIRECTORY_CACHE.update({"loadedAt": time.time(), "items": rows, "fullLoaded": len(rows) > len(A_STOCK_SEARCH_SEEDS)})
+            return rows
     deduped = list({item["code"]: item for item in items if item.get("code") and item.get("name")}.values())
-    STOCK_DIRECTORY_CACHE.update({"loadedAt": time.time(), "items": deduped, "fullLoaded": full_loaded})
+    STOCK_DIRECTORY_CACHE.update({"loadedAt": time.time(), "items": deduped, "fullLoaded": False})
     return deduped
 
 
@@ -2900,6 +3094,8 @@ def run_background_task(task_id: str, source: str = "background") -> dict[str, A
             result = refresh_user_news_cache()
         elif task_id == "alert_check":
             result = run_alert_check(source)
+        elif task_id == "stock_directory":
+            result = refresh_stock_directory(force=True)
         elif task_id == "market_universe":
             result = ensure_market_universe()
         else:
@@ -3769,6 +3965,19 @@ def init_db() -> None:
         )
         db.execute(
             """
+            CREATE TABLE IF NOT EXISTS stock_directory (
+              code TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              industry TEXT DEFAULT 'A股',
+              initials TEXT DEFAULT '',
+              search_text TEXT NOT NULL,
+              source TEXT NOT NULL,
+              updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        db.execute(
+            """
             CREATE TABLE IF NOT EXISTS users (
               id TEXT PRIMARY KEY,
               display_name TEXT NOT NULL,
@@ -4088,6 +4297,15 @@ def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_alert_events_created ON alert_events (created_at DESC)"
         )
         db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_stock_directory_name ON stock_directory (name)"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_stock_directory_initials ON stock_directory (initials)"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_stock_directory_search ON stock_directory (search_text)"
+        )
+        db.execute(
             "CREATE INDEX IF NOT EXISTS idx_watchlist_user_created ON watchlist (user_id, created_at DESC)"
         )
         db.execute(
@@ -4146,6 +4364,34 @@ def init_db() -> None:
                 "INSERT OR REPLACE INTO stocks (code, payload) VALUES (?, ?)",
                 (code, to_json(stock)),
             )
+        seeded_items = [normalize_directory_item(item, "seed") for item in A_STOCK_SEARCH_SEEDS]
+        db.executemany(
+            """
+            INSERT INTO stock_directory (
+              code, name, industry, initials, search_text, source, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(code) DO UPDATE SET
+              name = excluded.name,
+              industry = excluded.industry,
+              initials = excluded.initials,
+              search_text = excluded.search_text,
+              source = excluded.source,
+              updated_at = excluded.updated_at
+            """,
+            [
+                (
+                    item["code"],
+                    item["name"],
+                    item["industry"],
+                    item["initials"],
+                    item["searchText"],
+                    item["source"],
+                    now_text(),
+                )
+                for item in seeded_items
+            ],
+        )
         if not db.execute("SELECT 1 FROM watchlist LIMIT 1").fetchone():
             db.execute("INSERT INTO watchlist (code, user_id) VALUES (?, ?)", ("600519", DEFAULT_USER_ID))
         if not db.execute("SELECT 1 FROM portfolio LIMIT 1").fetchone():
@@ -4176,6 +4422,10 @@ def init_db() -> None:
         db.execute(
             "INSERT OR IGNORE INTO app_settings (key, payload) VALUES (?, ?)",
             ("data_status", to_json(DEFAULT_DATA_STATUS)),
+        )
+        db.execute(
+            "INSERT OR IGNORE INTO app_settings (key, payload) VALUES (?, ?)",
+            ("stock_directory_status", to_json(DEFAULT_DIRECTORY_STATUS)),
         )
 
 
@@ -4279,9 +4529,15 @@ def system_error_create(payload: ErrorAuditPayload) -> dict[str, Any]:
 @app.get("/api/data/status")
 def data_status_show() -> dict[str, Any]:
     status = get_data_status()
+    directory_status = get_directory_status()
     source_score, source_label = source_reliability_label(status.get("source"))
     return {
         **status,
+        "stockDirectory": {
+            **directory_status,
+            "refreshIntervalMinutes": DIRECTORY_REFRESH_MINUTES,
+            "stale": stock_directory_is_stale(),
+        },
         "sourceTrust": {
             "score": source_score,
             "label": source_label,
@@ -4310,6 +4566,19 @@ def data_refresh(payload: RefreshPayload | None = None) -> dict[str, Any]:
 @app.post("/api/data/sync-universe")
 def data_sync_universe() -> dict[str, Any]:
     return sync_market_universe()
+
+
+@app.post("/api/data/sync-stock-directory")
+def data_sync_stock_directory() -> dict[str, Any]:
+    return refresh_stock_directory(force=True)
+
+
+@app.get("/api/data/stock-directory")
+def data_stock_directory_index(keyword: str = "", limit: int = 50) -> dict[str, Any]:
+    return {
+        "status": get_directory_status(),
+        "items": stock_directory_rows(keyword=keyword, limit=limit),
+    }
 
 
 @app.post("/api/data/snapshot")
