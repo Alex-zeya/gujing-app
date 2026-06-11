@@ -1012,6 +1012,10 @@ def now_text() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+def now_precise_text() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+
+
 def parse_refresh_time(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -6606,7 +6610,7 @@ def record_portfolio_transaction(
     db.execute(
         """
         INSERT INTO portfolio_transactions (id, user_id, code, action, amount, shares, price, note, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             secrets.token_hex(12),
@@ -6617,6 +6621,7 @@ def record_portfolio_transaction(
             int(shares or 0),
             round(float(price or 0), 2),
             note.strip()[:120],
+            now_precise_text(),
         ),
     )
 
@@ -7053,6 +7058,87 @@ def portfolio_transactions_snapshot(
     return [portfolio_transaction_row(row) for row in rows]
 
 
+def portfolio_transaction_ledger(user_id: str, items: list[dict[str, Any]]) -> dict[str, Any]:
+    with connect() as db:
+        rows = db.execute(
+            """
+            SELECT id, user_id, code, action, amount, shares, price, note, created_at
+            FROM portfolio_transactions
+            WHERE user_id = ?
+            ORDER BY
+              created_at ASC,
+              CASE action
+                WHEN 'buy' THEN 0
+                WHEN 'adjust' THEN 1
+                WHEN 'sell' THEN 2
+                WHEN 'remove' THEN 3
+                ELSE 4
+              END ASC,
+              id ASC
+            """,
+            (user_id,),
+        ).fetchall()
+    open_lots: dict[str, dict[str, float]] = {}
+    total_buy_amount = 0.0
+    total_sell_amount = 0.0
+    realized_gain = 0.0
+    buy_count = 0
+    sell_count = 0
+
+    for row in rows:
+        action = str(row["action"] or "")
+        code = clean_code(row["code"])
+        amount = float(row["amount"] or 0)
+        shares = int(row["shares"] or 0)
+        price = float(row["price"] or 0)
+        lot = open_lots.setdefault(code, {"shares": 0.0, "cost": 0.0})
+        if action == "buy":
+            buy_amount = amount if amount > 0 else shares * price
+            lot["shares"] += shares
+            lot["cost"] += buy_amount
+            total_buy_amount += buy_amount
+            buy_count += 1
+        elif action == "sell":
+            sell_amount = amount if amount > 0 else shares * price
+            average_cost = lot["cost"] / lot["shares"] if lot["shares"] > 0 else 0
+            cost_released = min(lot["cost"], average_cost * shares)
+            lot["shares"] = max(0.0, lot["shares"] - shares)
+            lot["cost"] = max(0.0, lot["cost"] - cost_released)
+            total_sell_amount += sell_amount
+            realized_gain += sell_amount - cost_released
+            sell_count += 1
+        elif action == "remove":
+            lot["shares"] = 0.0
+            lot["cost"] = 0.0
+
+    holding_cost = round(sum(float(item.get("amount") or 0) for item in items), 2)
+    market_value = round(sum(float(item.get("marketValue") or 0) for item in items), 2)
+    unrealized_gain = round(sum(float(item.get("totalGain") or 0) for item in items), 2)
+    day_gain = round(sum(float(item.get("dayGain") or 0) for item in items), 2)
+    realized_gain = round(realized_gain, 2)
+    total_gain = round(realized_gain + unrealized_gain, 2)
+    net_cash_invested = round(total_buy_amount - total_sell_amount, 2)
+    return {
+        "holdingCost": holding_cost,
+        "marketValue": market_value,
+        "unrealizedGain": unrealized_gain,
+        "realizedGain": realized_gain,
+        "totalGain": total_gain,
+        "dayGain": day_gain,
+        "totalBuyAmount": round(total_buy_amount, 2),
+        "totalSellAmount": round(total_sell_amount, 2),
+        "netCashInvested": net_cash_invested,
+        "principalInUse": holding_cost,
+        "cashRecovered": round(total_sell_amount, 2),
+        "totalGainRate": round(total_gain / total_buy_amount * 100, 2) if total_buy_amount else 0,
+        "unrealizedGainRate": round(unrealized_gain / holding_cost * 100, 2) if holding_cost else 0,
+        "marketToCostRatio": round(market_value / holding_cost, 4) if holding_cost else 0,
+        "transactionCount": len(rows),
+        "buyCount": buy_count,
+        "sellCount": sell_count,
+    }
+
+
 def portfolio_snapshot(
     user_id: str | None = None,
     refresh_quotes: bool = False,
@@ -7148,6 +7234,7 @@ def portfolio_snapshot(
             for item in items:
                 record_portfolio_advice_snapshot(db, user_id=owner_id, item=item)
     total_gain = round(sum(item["totalGain"] for item in items), 2)
+    capital_summary = portfolio_transaction_ledger(owner_id, items)
     return {
         "userId": owner_id,
         "riskProfile": risk_profile_rules(profile["riskLevel"]),
@@ -7157,6 +7244,7 @@ def portfolio_snapshot(
         "dayGain": round(sum(item["dayGain"] for item in items), 2),
         "totalGain": total_gain,
         "totalGainRate": round(total_gain / total_cost * 100, 2) if total_cost else 0,
+        "capitalSummary": capital_summary,
         "recentTransactions": recent_transactions,
         "quoteRefresh": quote_refresh,
     }
@@ -7405,6 +7493,7 @@ def portfolio_insights(snapshot: dict[str, Any] | None = None) -> dict[str, Any]
             "dayGain": round(day_gain, 2),
             "totalGain": round(total_gain, 2),
             "totalGainRate": data.get("totalGainRate", 0),
+            "capital": data.get("capitalSummary") or {},
         },
         "concentration": {
             "topIndustry": top_bucket["name"],

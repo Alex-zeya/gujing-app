@@ -99,8 +99,36 @@ class PortfolioFlowTest(unittest.TestCase):
 
         self.assertEqual(
             self.transaction_actions(limit=4),
-            ["buy", "adjust", "sell", "remove"],
+            ["remove", "sell", "adjust", "buy"],
         )
+
+    def test_capital_summary_tracks_realized_gain_after_sell(self):
+        with self.backend.connect() as db:
+            db.execute("DELETE FROM portfolio WHERE user_id = ?", (self.backend.DEFAULT_USER_ID,))
+            db.execute("DELETE FROM portfolio_transactions WHERE user_id = ?", (self.backend.DEFAULT_USER_ID,))
+        self.backend.portfolio_upsert(
+            self.backend.PortfolioPayload(
+                code="000001",
+                shares=100,
+                costPrice=10,
+                note="capital buy",
+            )
+        )
+        snapshot = self.backend.portfolio_sell(
+            "000001",
+            self.backend.PortfolioSellPayload(
+                shares=40,
+                price=12,
+                note="capital sell",
+            ),
+        )
+
+        summary = snapshot["capitalSummary"]
+        self.assertEqual(summary["totalBuyAmount"], 1000)
+        self.assertEqual(summary["totalSellAmount"], 480)
+        self.assertEqual(summary["realizedGain"], 80)
+        self.assertEqual(summary["holdingCost"], 600)
+        self.assertEqual(summary["sellCount"], 1)
 
     def test_portfolio_holding_includes_personalized_action(self):
         snapshot = self.backend.portfolio_upsert(

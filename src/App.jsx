@@ -3467,7 +3467,15 @@ function PortfolioView({
   const totalGain = portfolio.reduce((sum, item) => sum + (item.totalGain ?? 0), 0)
   const totalGainRate = totalCost ? (totalGain / totalCost) * 100 : 0
   const selectedTradeHolding = portfolio.find((item) => item.code === tradeDraft.code)
-  const cashMultiple = totalCost ? totalAmount / totalCost : 0
+  const capital = portfolioInsights?.summary?.capital ?? {}
+  const ledgerHoldingCost = capital.holdingCost ?? totalCost
+  const ledgerMarketValue = capital.marketValue ?? totalAmount
+  const ledgerUnrealizedGain = capital.unrealizedGain ?? totalGain
+  const ledgerRealizedGain = capital.realizedGain ?? 0
+  const ledgerTotalGain = capital.totalGain ?? totalGain
+  const ledgerTotalGainRate = capital.totalGainRate ?? totalGainRate
+  const ledgerDayGain = capital.dayGain ?? portfolioDayGain
+  const cashMultiple = capital.marketToCostRatio ?? (ledgerHoldingCost ? ledgerMarketValue / ledgerHoldingCost : 0)
   const healthScore = Math.max(42, 92 - concentration.ratio + Math.round(portfolioDayGain / 1000))
   const portfolioAdvice = buildPortfolioAdvice(portfolio, concentration, portfolioDayGain)
   const holdingSuggestions = draft.code.trim()
@@ -3491,7 +3499,7 @@ function PortfolioView({
       code: item.code,
       action,
       amount: action === 'buy' ? '10000' : '',
-      shares: action === 'sell' ? String(item.shares || '') : '',
+      shares: '',
       price: price > 0 ? String(price) : '',
     })
   }
@@ -3538,6 +3546,14 @@ function PortfolioView({
       setIsSubmittingTrade(false)
     }
   }
+  const tradeAmountPreview = Number(tradeDraft.amount)
+  const tradeSharesPreview = Number(tradeDraft.shares)
+  const tradePricePreview = Number(tradeDraft.price)
+  const tradeEstimatedAmount = tradeAmountPreview > 0
+    ? tradeAmountPreview
+    : tradeSharesPreview > 0 && tradePricePreview > 0
+      ? tradeSharesPreview * tradePricePreview
+      : 0
 
   return (
     <div className="view-stack">
@@ -3581,33 +3597,49 @@ function PortfolioView({
         </div>
         <div className="capital-grid">
           <div>
-            <span>投入本金</span>
-            <strong>{currency(totalCost)}</strong>
+            <span>持仓本金</span>
+            <strong>{currency(ledgerHoldingCost)}</strong>
           </div>
           <div>
             <span>当前市值</span>
-            <strong>{currency(totalAmount)}</strong>
+            <strong>{currency(ledgerMarketValue)}</strong>
           </div>
           <div>
-            <span>累计收益</span>
-            <strong className={totalGain >= 0 ? 'is-up' : 'is-down'}>
-              {currency(totalGain)}
+            <span>未实现收益</span>
+            <strong className={ledgerUnrealizedGain >= 0 ? 'is-up' : 'is-down'}>
+              {currency(ledgerUnrealizedGain)}
             </strong>
           </div>
           <div>
-            <span>收益率</span>
-            <strong className={totalGainRate >= 0 ? 'is-up' : 'is-down'}>
-              {formatPercent(totalGainRate)}
+            <span>已实现收益</span>
+            <strong className={ledgerRealizedGain >= 0 ? 'is-up' : 'is-down'}>
+              {currency(ledgerRealizedGain)}
             </strong>
           </div>
         </div>
         <p>
-          本金按买入成本计算，卖出会减少对应股数和成本；收益根据当前市值和持仓成本估算。
+          买入会增加持仓本金；卖出会按平均成本释放本金，并单独计算已实现收益。
         </p>
+        <div className="capital-flow">
+          <div>
+            <span>累计买入</span>
+            <strong>{currency(capital.totalBuyAmount ?? ledgerHoldingCost)}</strong>
+          </div>
+          <div>
+            <span>累计卖出</span>
+            <strong>{currency(capital.totalSellAmount ?? 0)}</strong>
+          </div>
+          <div>
+            <span>总收益</span>
+            <strong className={ledgerTotalGain >= 0 ? 'is-up' : 'is-down'}>
+              {currency(ledgerTotalGain)} / {formatPercent(ledgerTotalGainRate)}
+            </strong>
+          </div>
+        </div>
         <div className="capital-foot">
           <span>今日盈亏</span>
-          <strong className={portfolioDayGain >= 0 ? 'is-up' : 'is-down'}>
-            {currency(portfolioDayGain)}
+          <strong className={ledgerDayGain >= 0 ? 'is-up' : 'is-down'}>
+            {currency(ledgerDayGain)}
           </strong>
           <em>市值/本金 {cashMultiple ? cashMultiple.toFixed(2) : '0.00'}x</em>
         </div>
@@ -3960,6 +3992,16 @@ function PortfolioView({
                   >
                     取消
                   </button>
+                </div>
+                <div className="trade-preview">
+                  <span>
+                    {tradeDraft.action === 'sell'
+                      ? `可卖 ${item.shares} 股`
+                      : `当前成本 ${formatStatValue(item.costPrice)}`}
+                  </span>
+                  <strong>
+                    {tradeEstimatedAmount > 0 ? `预计${tradeActionLabel} ${currency(tradeEstimatedAmount)}` : '填写后自动估算'}
+                  </strong>
                 </div>
                 {tradeNotice && <p>{tradeNotice}</p>}
               </form>
