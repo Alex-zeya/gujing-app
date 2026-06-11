@@ -391,6 +391,7 @@ BACKGROUND_TASKS = {
     "alert_check": {"label": "提醒规则检查", "intervalMinutes": ALERT_CHECK_INTERVAL_MINUTES},
     "stock_directory": {"label": "A股股票目录同步", "intervalMinutes": DIRECTORY_REFRESH_MINUTES},
     "market_universe": {"label": "全市场行情同步", "intervalMinutes": MARKET_REFRESH_MINUTES},
+    "free_fundamentals": {"label": "免费基本面补全", "intervalMinutes": DIRECTORY_REFRESH_MINUTES},
 }
 
 RATE_LIMIT_RULES = {
@@ -1131,7 +1132,7 @@ def build_stock_from_directory(code: str, name: str, industry: str = "A股") -> 
         "signals": [
             {"title": "搜索", "level": "已匹配", "text": "企业名称和股票代码已识别。"},
             {"title": "行情", "level": "待同步", "text": "正在等待公开行情源返回价格。"},
-            {"title": "分析", "level": "待补充", "text": "需要 K线、成交额和行业数据后再给出更具体建议。"},
+            {"title": "分析", "level": "持续跟踪", "text": "系统会结合 K线、成交额和行业数据继续完善判断。"},
         ],
         "checklist": ["同步实时价格", "补充历史 K线", "查看行业和公告变化"],
         "dataCoverage": {"quote": False, "history": False, "fundamental": False},
@@ -1711,9 +1712,20 @@ def update_stock_with_spot(stock: dict[str, Any], spot_row: Any) -> dict[str, An
     stock["price"] = price_to_text(price)
     stock["change"] = format_change(day_change)
     stock["performance"] = {**stock["performance"], "day": day_change}
+    previous_stats = stock.get("quoteStats") or {}
+    stock["quoteStats"] = {
+        **previous_stats,
+        "open": number_or_none(value_from_row(spot_row, ["今开", "开盘"])) or previous_stats.get("open"),
+        "previousClose": number_or_none(value_from_row(spot_row, ["昨收"])) or previous_stats.get("previousClose"),
+        "dayHigh": number_or_none(value_from_row(spot_row, ["最高"])) or previous_stats.get("dayHigh"),
+        "dayLow": number_or_none(value_from_row(spot_row, ["最低"])) or previous_stats.get("dayLow"),
+        "amount": compact_yuan(value_from_row(spot_row, ["成交额"])) or previous_stats.get("amount"),
+        "volume": compact_volume(value_from_row(spot_row, ["成交量"])) or previous_stats.get("volume"),
+        "source": "akshare:stock_zh_a_spot_em",
+    }
     stock["updated"] = f"实时 {datetime.now().strftime('%H:%M')}"
     stock["pulse"] = f"实时涨跌幅 {format_change(day_change)}，继续结合行业和财报观察。"
-    return stock
+    return update_stock_with_free_fundamentals(stock, spot_row, "akshare:stock_zh_a_spot_em")
 
 
 def value_from_quote(quote: dict[str, Any], names: list[str], default: Any = None) -> Any:
@@ -1775,14 +1787,15 @@ def update_stock_with_easy_quote(stock: dict[str, Any], quote: dict[str, Any]) -
         "ask1": value_from_quote(quote, ["ask1"]),
         "time": str(quote.get("datetime") or quote.get("time") or ""),
     }
+    previous_stats = stock.get("quoteStats") or {}
     stock["quoteStats"] = {
-        **stock.get("quoteStats", {}),
-        "open": number_or_none(value_from_quote(quote, ["open", "openPrice"])),
-        "previousClose": number_or_none(previous_close),
-        "dayHigh": number_or_none(value_from_quote(quote, ["high"])),
-        "dayLow": number_or_none(value_from_quote(quote, ["low"])),
-        "volume": compact_volume(value_from_quote(quote, ["成交量(手)", "volume"])),
-        "amount": compact_yuan(value_from_quote(quote, ["volume", "成交额(万)"])),
+        **previous_stats,
+        "open": number_or_none(value_from_quote(quote, ["open", "openPrice"])) or previous_stats.get("open"),
+        "previousClose": number_or_none(previous_close) or previous_stats.get("previousClose"),
+        "dayHigh": number_or_none(value_from_quote(quote, ["high"])) or previous_stats.get("dayHigh"),
+        "dayLow": number_or_none(value_from_quote(quote, ["low"])) or previous_stats.get("dayLow"),
+        "volume": compact_volume(value_from_quote(quote, ["成交量(手)", "volume"])) or previous_stats.get("volume"),
+        "amount": compact_yuan(value_from_quote(quote, ["volume", "成交额(万)"])) or previous_stats.get("amount"),
         "source": "easyquotation",
     }
     existing_coverage = stock.get("dataCoverage", {})
@@ -1793,6 +1806,39 @@ def update_stock_with_easy_quote(stock: dict[str, Any], quote: dict[str, Any]) -
         "fundamental": bool(existing_coverage.get("fundamental", default_history)),
     }
     stock["pulse"] = f"当前价 {stock['price']}，今日涨跌 {stock['change']}。"
+    return stock
+
+
+def update_stock_with_free_fundamentals(stock: dict[str, Any], row: Any, source: str = "akshare:stock_zh_a_spot_em") -> dict[str, Any]:
+    quote_stats = stock.get("quoteStats") or {}
+    total_mv = value_from_row(row, ["总市值", "总市值-元", "market_cap"])
+    circ_mv = value_from_row(row, ["流通市值", "流通市值-元", "circ_mv"])
+    pe = value_from_row(row, ["市盈率-动态", "动态市盈率", "市盈率", "PE"])
+    pb = value_from_row(row, ["市净率", "PB"])
+    turnover_rate = value_from_row(row, ["换手率", "换手率%"])
+    volume_ratio = value_from_row(row, ["量比"])
+    amount = value_from_row(row, ["成交额"])
+    volume = value_from_row(row, ["成交量"])
+
+    stock = {**stock}
+    stock["quoteStats"] = {
+        **quote_stats,
+        "marketCap": compact_yuan(total_mv) or quote_stats.get("marketCap"),
+        "floatMarketCap": compact_yuan(circ_mv) or quote_stats.get("floatMarketCap"),
+        "pe": number_or_none(pe) if number_or_none(pe) is not None else quote_stats.get("pe"),
+        "pb": number_or_none(pb) if number_or_none(pb) is not None else quote_stats.get("pb"),
+        "turnoverRate": number_or_none(turnover_rate) if number_or_none(turnover_rate) is not None else quote_stats.get("turnoverRate"),
+        "volumeRatio": number_or_none(volume_ratio) if number_or_none(volume_ratio) is not None else quote_stats.get("volumeRatio"),
+        "amount": compact_yuan(amount) or quote_stats.get("amount"),
+        "volume": compact_volume(volume) or quote_stats.get("volume"),
+        "fundamentalSource": source,
+    }
+    has_fundamental = bool(stock["quoteStats"].get("marketCap") or stock["quoteStats"].get("pe") or stock["quoteStats"].get("pb"))
+    stock["dataCoverage"] = {**stock.get("dataCoverage", {}), "fundamental": has_fundamental or bool(stock.get("dataCoverage", {}).get("fundamental"))}
+    stock["cache"] = {
+        **stock.get("cache", {}),
+        "freeFundamentalRefreshedAt": now_text(),
+    }
     return stock
 
 
@@ -1832,10 +1878,10 @@ def build_stock_from_quote(code: str, quote: dict[str, Any]) -> dict[str, Any]:
         "sparkline": [42, 43, 42, 45, 44, 46, 47, 46, 48, 48],
         "chart": chart_seed,
         "tone": "neutral",
-        "pulse": "已接入实时行情，更多基本面分析待补充。",
+        "pulse": "已接入实时行情，系统会继续补充公开基本面数据。",
         "updated": quote_time_text(quote),
         "score": 60,
-        "tags": ["实时行情", "待分析"],
+        "tags": ["实时行情", "公开数据"],
         "idea": {
             "stance": "先观察",
             "horizon": "短中期",
@@ -1846,7 +1892,7 @@ def build_stock_from_quote(code: str, quote: dict[str, Any]) -> dict[str, Any]:
         "metrics": [["当前价", price_to_text(price), "实时"], ["成交额", str(value_from_quote(quote, ["volume", "成交额(万)"], "-")), "跟踪"], ["数据源", "easyquotation", "已接入"]],
         "signals": [
             {"title": "行情", "level": "已接入", "text": "已从公开行情源获取实时/准实时价格。"},
-            {"title": "分析", "level": "待补充", "text": "暂未计算完整技术指标和基本面评分。"},
+            {"title": "分析", "level": "持续跟踪", "text": "系统会结合缓存行情、K线和公开基本面逐步提高可信度。"},
             {"title": "风险", "level": "需谨慎", "text": "公开免费行情源可能存在延迟或临时不可用。"},
         ],
         "checklist": ["补充历史 K线", "补充行业和财报数据", "观察成交额和价格波动"],
@@ -1947,6 +1993,86 @@ def sync_market_universe() -> dict[str, Any]:
         "snapshotCount": snapshotted,
     }
     return save_data_status(status)
+
+
+def sync_free_fundamentals(limit: int | None = None) -> dict[str, Any]:
+    import akshare as ak
+
+    try:
+        spot_df = ak.stock_zh_a_spot_em()
+    except Exception as error:
+        status = {
+            "mode": "fallback",
+            "source": "akshare:stock_zh_a_spot_em",
+            "lastAttempt": now_text(),
+            "message": "免费公开基本面源暂不可用，继续使用最近一次缓存。",
+            "syncedCount": 0,
+            "enrichedCount": 0,
+            "errors": [f"akshare-spot:{type(error).__name__}"],
+        }
+        with connect() as db:
+            db.execute(
+                """
+                INSERT OR REPLACE INTO app_settings (key, payload)
+                VALUES (?, ?)
+                """,
+                ("free_fundamentals_status", to_json(status)),
+            )
+        return status
+
+    synced = 0
+    enriched = 0
+    errors: list[str] = []
+    rows = spot_df.to_dict("records")
+    if limit:
+        rows = rows[:limit]
+
+    with connect() as db:
+        for row in rows:
+            code = clean_code(str(value_from_row(row, ["代码"], "")))
+            if len(code) != 6 or not code[0].isdigit():
+                continue
+            try:
+                existing_row = db.execute("SELECT payload FROM stocks WHERE code = ?", (code,)).fetchone()
+                stock = from_json(existing_row["payload"]) if existing_row else build_stock_from_directory(
+                    code,
+                    str(value_from_row(row, ["名称"], code)),
+                    "A股",
+                )
+                stock = update_stock_with_spot(stock, row)
+                stock["cache"] = {
+                    **stock.get("cache", {}),
+                    "freeFundamentalRefreshedAt": now_text(),
+                }
+                db.execute(
+                    "INSERT OR REPLACE INTO stocks (code, payload) VALUES (?, ?)",
+                    (stock["code"], to_json(stock)),
+                )
+                synced += 1
+                if (stock.get("quoteStats") or {}).get("marketCap"):
+                    enriched += 1
+            except Exception as error:
+                if len(errors) < 8:
+                    errors.append(f"{code}:{type(error).__name__}")
+
+    status = {
+        "mode": "live" if synced else "fallback",
+        "source": "akshare:stock_zh_a_spot_em",
+        "lastRefresh": now_text(),
+        "message": f"已用免费公开源补全 {synced} 只股票，{enriched} 只含市值字段。" if synced else "免费基本面源暂不可用，继续使用本地缓存。",
+        "syncedCount": synced,
+        "enrichedCount": enriched,
+        "errors": errors,
+    }
+    with connect() as db:
+        db.execute(
+            """
+            INSERT OR REPLACE INTO app_settings (key, payload)
+            VALUES (?, ?)
+            """,
+            ("free_fundamentals_status", to_json(status)),
+        )
+    return status
 
 
 def ensure_market_universe(max_age_minutes: int = MARKET_REFRESH_MINUTES) -> dict[str, Any]:
@@ -2251,7 +2377,7 @@ def stock_data_quality(stock: dict[str, Any]) -> dict[str, Any]:
     if not has_history:
         warnings.append("历史K线不足，趋势和回测置信度会下降。")
     if not has_fundamental:
-        warnings.append("市值或基本面字段待补充，基本面判断偏保守。")
+        warnings.append("公开基本面字段较少，基本面判断偏保守。")
     if not warnings:
         warnings.append("当前数据覆盖较完整，但免费行情源仍可能延迟。")
     source_trust = stock_source_trust(stock)
@@ -2260,7 +2386,7 @@ def stock_data_quality(stock: dict[str, Any]) -> dict[str, Any]:
         "label": label,
         "quote": "正常" if has_quote else "缺失",
         "history": "充足" if has_history else "不足",
-        "fundamental": "可用" if has_fundamental else "待补充",
+        "fundamental": "可用" if has_fundamental else "公开数据较少",
         "historyRows": len(history_rows),
         "warnings": warnings[:3],
         "sourceTrust": source_trust,
@@ -2474,7 +2600,7 @@ def market_cap_text(stock: dict[str, Any]) -> str:
     raw_value = (stock.get("quoteStats") or {}).get("marketCap") or stock.get("marketCap")
     value = number_or_none(raw_value)
     if value is None or value <= 0:
-        return "待补充"
+        return "暂无公开数据"
     if value >= 100000000:
         return f"{value / 100000000:.1f} 亿"
     if value >= 10000:
@@ -2492,7 +2618,7 @@ def industry_competitive_rules(industry: str | None) -> dict[str, Any]:
     return INDUSTRY_COMPETITIVE_RULES["default"]
 
 
-def compact_metric_text(value: Any, fallback: str = "待补充") -> str:
+def compact_metric_text(value: Any, fallback: str = "暂无公开数据") -> str:
     if value is None or value == "":
         return fallback
     return str(value)
@@ -2523,7 +2649,7 @@ def valuation_text(stock: dict[str, Any]) -> str:
         parts.append(f"PE {pe:.1f}")
     if pb is not None and pb > 0:
         parts.append(f"PB {pb:.2f}")
-    return " / ".join(parts) if parts else "待补充"
+    return " / ".join(parts) if parts else "暂无公开数据"
 
 
 def amount_activity_text(stock: dict[str, Any]) -> str:
@@ -2531,7 +2657,7 @@ def amount_activity_text(stock: dict[str, Any]) -> str:
     for key in ("amount", "turnover", "volume"):
         if stats.get(key):
             return str(stats[key])
-    return "待补充"
+    return "暂无公开数据"
 
 
 def build_fundamental_profile(
@@ -2558,11 +2684,11 @@ def build_fundamental_profile(
     amount_text = amount_activity_text(stock)
 
     field_checks = {
-        "市值": market_cap != "待补充",
-        "估值": valuation != "待补充",
+        "市值": market_cap != "暂无公开数据",
+        "估值": valuation != "暂无公开数据",
         "盈利": eps is not None or revenue_growth is not None or profit_growth is not None or gross_margin is not None,
         "负债": debt_ratio is not None,
-        "交易": bool(open_price or previous_close or amount_text != "待补充"),
+        "交易": bool(open_price or previous_close or amount_text != "暂无公开数据"),
     }
     available_count = sum(1 for value in field_checks.values() if value)
     source_score = int((quality.get("sourceTrust") or {}).get("score") or 50)
@@ -2574,32 +2700,32 @@ def build_fundamental_profile(
         label = "资料可辅助"
         summary = "已有部分市值、行情或估值字段，适合辅助判断，不适合单独决定仓位。"
     else:
-        label = "资料待补充"
-        summary = "基本面字段不足，系统会降低持仓建议强度，先看行情和K线确认。"
+        label = "公开数据较少"
+        summary = "当前公开源没有返回足够基本面字段，系统会更多依赖实时行情、K线和历史缓存。"
 
     metrics_list = [
         {
             "name": "企业市值",
             "value": market_cap,
-            "status": "已读取" if market_cap != "待补充" else "待补充",
+            "status": "已读取" if market_cap != "暂无公开数据" else "暂无数据",
             "note": "用于判断公司体量和波动承受能力。",
         },
         {
             "name": "估值字段",
             "value": valuation,
-            "status": "已读取" if valuation != "待补充" else "待补充",
+            "status": "已读取" if valuation != "暂无公开数据" else "暂无数据",
             "note": "后续会加入估值分位，避免只看静态PE/PB。",
         },
         {
             "name": "盈利字段",
             "value": f"EPS {eps:.2f}" if eps is not None else compact_metric_text(profit_growth or revenue_growth or gross_margin),
-            "status": "已读取" if field_checks["盈利"] else "待补充",
+            "status": "已读取" if field_checks["盈利"] else "暂无数据",
             "note": "更完整的版本会看营收、利润和毛利率变化。",
         },
         {
             "name": "交易活跃",
             "value": amount_text,
-            "status": "已读取" if amount_text != "待补充" else "待补充",
+            "status": "已读取" if amount_text != "暂无公开数据" else "暂无数据",
             "note": "成交越活跃，短线信号更容易被验证。",
         },
     ]
@@ -2624,11 +2750,11 @@ def build_fundamental_profile(
 
     strengths = []
     risks = []
-    if market_cap != "待补充":
+    if market_cap != "暂无公开数据":
         strengths.append("已拿到企业体量字段，可以辅助判断公司规模和行业位置。")
     else:
         risks.append("市值缺失时，无法判断公司体量和估值安全边际。")
-    if valuation != "待补充":
+    if valuation != "暂无公开数据":
         strengths.append("已读取估值字段，后续可继续做估值分位和同行对比。")
     else:
         risks.append("估值字段不足，不能只凭涨跌幅判断是否便宜。")
@@ -2641,7 +2767,7 @@ def build_fundamental_profile(
     if source_score < 60:
         risks.append("当前基本面来源可信度偏低，建议等待授权或更稳定数据源。")
 
-    holding_impact = "基本面资料不足，持仓建议会偏保守。"
+    holding_impact = "公开基本面数据较少时，持仓建议会更偏保守。"
     if score >= 74:
         holding_impact = "基本面资料较完整，可以和趋势、仓位一起用于判断是否继续持有。"
     elif score >= 56:
@@ -2692,7 +2818,7 @@ def build_industry_competitive_intel(
     moat_score = clamp_score(
         48
         + (12 if stock.get("tags") else 0)
-        + (10 if market_cap != "待补充" else -5)
+        + (10 if market_cap != "暂无公开数据" else -5)
         + (8 if stock.get("industry") and stock.get("industry") != "A股" else 0)
     )
     valuation_safety = clamp_score(
@@ -2819,7 +2945,7 @@ def build_research_framework(
         technical_evidence.append(f"MA5 {ma5:.2f}，MA20 {ma20:.2f}，用于判断短中期方向。")
 
     market_cap = market_cap_text(stock)
-    has_fundamental = market_cap != "待补充" or bool(stock.get("metrics"))
+    has_fundamental = market_cap != "暂无公开数据" or bool(stock.get("metrics"))
     fundamental_score = clamp_score(
         45
         + (16 if has_fundamental else -8)
@@ -2828,14 +2954,14 @@ def build_research_framework(
         + (5 if current_price else -5)
         + (4 if fundamental_profile.get("score", 0) >= 70 else 0)
     )
-    fundamental_summary = fundamental_profile.get("label") or ("基础资料可用" if fundamental_score >= 60 else "基本面待补充")
+    fundamental_summary = fundamental_profile.get("label") or ("基础资料可用" if fundamental_score >= 60 else "公开数据较少")
     fundamental_evidence = [
         f"企业市值 {market_cap}，行业分类：{stock.get('industry') or '待识别'}。",
         f"行业模型采用“{industry_model['name']}”，重点看：{industry_model['focus']}",
     ]
     if quote_stats.get("open") or quote_stats.get("prevClose"):
         fundamental_evidence.append(
-            f"今日开盘 {quote_stats.get('open') or '待补充'}，昨日收盘 {quote_stats.get('prevClose') or '待补充'}。"
+            f"今日开盘 {quote_stats.get('open') or '暂无公开数据'}，昨日收盘 {quote_stats.get('prevClose') or '暂无公开数据'}。"
         )
 
     positive_news = int(news_counts.get("positive", 0) or 0)
@@ -2848,7 +2974,7 @@ def build_research_framework(
     elif news_impact.get("items"):
         news_summary = "消息中性"
     else:
-        news_summary = "消息待补充"
+        news_summary = "暂无明显消息"
     news_evidence = [
         f"近期新闻样本：利好 {positive_news} 条，利空 {negative_news} 条。",
         news_impact.get("stance") or "暂未读取到足够新闻样本。",
@@ -3066,7 +3192,7 @@ def build_stock_advice_engine(
         news_reason = "近期消息没有明显单边方向。"
         news_risk = "中性消息也可能在财报或公告后改变判断。"
     else:
-        news_conclusion = "消息待补充"
+        news_conclusion = "暂无明显消息"
         news_reason = "暂未读取到足够新闻样本。"
         news_risk = "缺少消息面时，不适合只看价格做决定。"
     add_rule("消息", news_score, news_conclusion, news_reason, news_risk, model_weights["news"])
@@ -3836,6 +3962,8 @@ def run_background_task(task_id: str, source: str = "background") -> dict[str, A
             result = refresh_stock_directory(force=True)
         elif task_id == "market_universe":
             result = ensure_market_universe()
+        elif task_id == "free_fundamentals":
+            result = sync_free_fundamentals()
         else:
             raise RuntimeError(f"UNKNOWN_TASK:{task_id}")
 
@@ -4398,7 +4526,7 @@ def refresh_tushare_daily_basic(code: str, trade_date: str | None = None) -> dic
         "fundamentalTradeDate": row.get("trade_date"),
     }
     stock["metrics"] = [
-        ["企业市值", stock["quoteStats"].get("marketCap") or "待补充", "Tushare"],
+        ["企业市值", stock["quoteStats"].get("marketCap") or "暂无公开数据", "Tushare"],
         ["PE", compact_metric_text(stock["quoteStats"].get("pe") or stock["quoteStats"].get("peTtm")), "估值"],
         ["PB", compact_metric_text(stock["quoteStats"].get("pb")), "估值"],
     ]
@@ -4881,7 +5009,7 @@ def hydrate_stock_market_data(code: str, force_history: bool = False) -> dict[st
         **stock.get("dataCoverage", {}),
         "quote": quality["quote"] != "缺失",
         "history": quality["history"] == "充足",
-        "fundamental": quality["fundamental"] != "待补充",
+        "fundamental": quality["fundamental"] != "公开数据较少",
     }
     upsert_stock(stock)
     return stock
@@ -5526,6 +5654,11 @@ def data_stock_directory_index(keyword: str = "", limit: int = 50) -> dict[str, 
 @app.post("/api/data/snapshot")
 def data_snapshot_create() -> dict[str, Any]:
     return sync_market_universe()
+
+
+@app.post("/api/data/free-fundamentals/refresh")
+def data_free_fundamentals_refresh(limit: int | None = None) -> dict[str, Any]:
+    return sync_free_fundamentals(limit=limit)
 
 
 @app.get("/api/tasks/status")

@@ -556,13 +556,13 @@ function StockPriceLine({ stock, compact = false }) {
 }
 
 function formatStatValue(value, suffix = '') {
-  if (value === null || value === undefined || value === '') return '待补充'
+  if (value === null || value === undefined || value === '') return '数据源暂缺'
   if (typeof value === 'number') return `${value.toFixed(2)}${suffix}`
   return `${value}${suffix}`
 }
 
 function formatLevelValue(value, suffix = '') {
-  if (value === null || value === undefined || value === '') return '待补充'
+  if (value === null || value === undefined || value === '') return '数据源暂缺'
   if (typeof value === 'number') return `${value.toFixed(value >= 100 ? 1 : 2)}${suffix}`
   return `${value}${suffix}`
 }
@@ -750,7 +750,7 @@ function fallbackAnalysisScore(stock) {
     factors: [
       { name: '短期动量', score: Math.max(0, Math.min(100, 50 + stock.performance.day * 3)), text: `今日 ${displayStockMove(stock)}` },
       { name: '趋势质量', score: Math.max(0, Math.min(100, 50 + stock.performance.month * 2)), text: `近一月 ${formatPercent(stock.performance.month)}` },
-      { name: '数据完整度', score: stock.dataCoverage?.history ? 80 : 45, text: stock.dataCoverage?.history ? '已接入历史K线' : '历史数据待补充' },
+      { name: '数据完整度', score: stock.dataCoverage?.history ? 80 : 45, text: stock.dataCoverage?.history ? '已接入历史K线' : '历史数据会随每日缓存逐步积累' },
     ],
   }
 }
@@ -2334,7 +2334,7 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
           {decision.hasHistory ? (
             <strong className={trendClass(monthMove)}>{formatPercent(monthMove)}</strong>
           ) : (
-            <strong>待补充</strong>
+            <strong>数据源暂缺</strong>
           )}
         </div>
       </div>
@@ -3208,8 +3208,8 @@ function buildTechnicalLevels(candles) {
     return {
       support: null,
       resistance: null,
-      volumeSignal: '成交量待补充',
-      trendSignal: '均线待补充',
+      volumeSignal: '成交量积累中',
+      trendSignal: '均线积累中',
     }
   }
 
@@ -3231,12 +3231,12 @@ function buildTechnicalLevels(candles) {
         : lastVolume < averageVolume * 0.75
           ? '成交量收缩'
           : '成交量正常'
-      : '成交量待补充',
+      : '成交量积累中',
     trendSignal: ma5 && ma20
       ? ma5 >= ma20
         ? '短线在中期均线上方'
         : '短线仍在中期均线下方'
-      : '均线待补充',
+      : '均线积累中',
   }
 }
 
@@ -3328,7 +3328,7 @@ function StockStatsGrid({ stock, candles = null }) {
       {stats.map(([label, value]) => (
         <div key={label}>
           <span>{label}</span>
-          <strong>{formatStatValue(value).replace('待补充', '数据源暂缺')}</strong>
+          <strong>{formatStatValue(value)}</strong>
         </div>
       ))}
     </div>
@@ -3340,7 +3340,7 @@ function KLineView({ stock, setActiveTab, returnTab, candles }) {
   const dataQuality = stock.dataQuality ?? stock.analysisScore?.dataQuality
   const sourceTrust = stock.sourceTrust ?? dataQuality?.sourceTrust
   const quoteSource = stock.quoteStats?.source ?? stock.quote?.source ?? '待同步'
-  const klineSource = stock.klineSource ?? stock.historyProvider ?? (stock.dataCoverage?.history ? '历史K线' : '待补充')
+  const klineSource = stock.klineSource ?? stock.historyProvider ?? (stock.dataCoverage?.history ? '历史K线' : '缓存积累中')
   return (
     <div className="view-stack kline-view">
       <button className="back-button" type="button" onClick={() => setActiveTab(returnTab)}>

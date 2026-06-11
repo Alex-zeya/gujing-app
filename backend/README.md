@@ -189,9 +189,27 @@ curl -X POST http://localhost:8010/api/stocks/300750/fundamentals/refresh
 - 实时/准实时价格：`easyquotation`，用于全 A股搜索、当前价、今日涨跌。
 - 历史日 K：Tushare 优先，东方财富公开接口兜底。
 - 基础估值字段：Tushare `daily_basic` 优先，包括市值、PE、PB、换手率、量比等。
+- 免费基本面兜底：`AKShare stock_zh_a_spot_em` 每天补全一次全市场公开字段，包括总市值、流通市值、PE、PB、换手率、量比、成交额等。
 - 自建日快照：每天调用 `POST /api/data/snapshot` 后逐步沉淀自己的行情库。
 
 东方财富公开接口适合前期验证产品体验，但它不是正式授权的数据服务，可能出现限流、字段变化或临时不可用。正式上线前建议补一个稳定授权数据源。
+
+免费版推荐运行节奏：
+
+```bash
+# 每 15 分钟或交易时段定时同步全市场行情和日快照
+curl -X POST http://localhost:8010/api/data/snapshot
+
+# 每天收盘后跑一次免费基本面补全
+curl -X POST http://localhost:8010/api/data/free-fundamentals/refresh
+```
+
+后台任务里已经包含：
+
+- `market_universe`：默认 15 分钟同步全市场行情。
+- `free_fundamentals`：默认每天同步一次免费公开基本面字段。
+
+免费源失败时，后端不会清空原有字段，会继续保留最近一次有效缓存。
 
 ## 持仓流水
 
