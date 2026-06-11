@@ -1781,7 +1781,7 @@ def update_stock_with_easy_quote(stock: dict[str, Any], quote: dict[str, Any]) -
         "previousClose": number_or_none(previous_close),
         "dayHigh": number_or_none(value_from_quote(quote, ["high"])),
         "dayLow": number_or_none(value_from_quote(quote, ["low"])),
-        "volume": compact_volume(value_from_quote(quote, ["turnover", "volume", "成交量(手)"])),
+        "volume": compact_volume(value_from_quote(quote, ["成交量(手)", "volume"])),
         "amount": compact_yuan(value_from_quote(quote, ["volume", "成交额(万)"])),
         "source": "easyquotation",
     }
@@ -4655,6 +4655,10 @@ def refresh_quote_data(codes: list[str]) -> dict[str, Any]:
             if not quote:
                 continue
             stock = update_stock_with_easy_quote(get_stock_or_404(code), quote)
+            try:
+                stock = update_stock_with_eastmoney_quote_stats(stock, fetch_eastmoney_quote_stats(code))
+            except Exception as error:
+                errors.append(f"eastmoney-extend:{code}:{type(error).__name__}")
             stock = mark_stock_cache(stock, "quoteRefreshedAt")
             upsert_stock(stock)
             refreshed_codes.append(code)
@@ -4691,6 +4695,11 @@ def refresh_quote_data(codes: list[str]) -> dict[str, Any]:
     return save_data_status(status)
 
 
+def quote_stats_need_extension(stock: dict[str, Any]) -> bool:
+    stats = stock.get("quoteStats") or {}
+    return not bool(stats.get("marketCap") and (stats.get("amount") or stats.get("volume")))
+
+
 def refresh_cached_quotes(
     codes: list[str],
     max_age_minutes: int = QUOTE_CACHE_MINUTES,
@@ -4703,7 +4712,7 @@ def refresh_cached_quotes(
             stock = get_stock_or_404(code)
         except HTTPException:
             continue
-        if stock_cache_is_stale(stock, "quoteRefreshedAt", max_age_minutes):
+        if stock_cache_is_stale(stock, "quoteRefreshedAt", max_age_minutes) or quote_stats_need_extension(stock):
             stale_codes.append(code)
 
     if not stale_codes:

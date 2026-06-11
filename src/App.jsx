@@ -3328,7 +3328,7 @@ function StockStatsGrid({ stock, candles = null }) {
       {stats.map(([label, value]) => (
         <div key={label}>
           <span>{label}</span>
-          <strong>{formatStatValue(value)}</strong>
+          <strong>{formatStatValue(value).replace('待补充', '数据源暂缺')}</strong>
         </div>
       ))}
     </div>
