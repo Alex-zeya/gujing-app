@@ -34,6 +34,7 @@ DEFAULT_USER_PROFILE = {
 ADVICE_MODEL_VERSION = "advice-v3-research-framework"
 FORECAST_MODEL_VERSION = "forecast-v1-rule-stat"
 RESEARCH_FRAMEWORK_VERSION = "research-v1-a-share-adapted"
+COMPETITIVE_INTEL_VERSION = "competitive-intel-v1-a-share"
 RECOMMENDATION_MODEL_VERSION = "recommend-v2-feedback"
 RISK_PROFILE_RULES = {
     "稳健": {
@@ -93,6 +94,43 @@ INDUSTRY_MODEL_RULES = {
         "name": "通用稳健模型",
         "focus": "综合趋势、波动、数据完整度和消息面。",
         "weights": {"trend": 0.24, "volatility": 0.16, "data": 0.12, "news": 0.12, "forecast": 0.14},
+    },
+}
+INDUSTRY_COMPETITIVE_RULES = {
+    "白酒": {
+        "label": "消费龙头竞争格局",
+        "peers": ["五粮液", "泸州老窖", "山西汾酒", "洋河股份"],
+        "moat": "品牌、渠道和高端价格带是核心竞争力。",
+        "demand": "重点看商务消费、渠道库存和批价稳定性。",
+        "risk": "若批价走弱或库存升高，估值修复会被压制。",
+    },
+    "动力电池": {
+        "label": "新能源产业链竞争格局",
+        "peers": ["比亚迪", "亿纬锂能", "国轩高科", "欣旺达"],
+        "moat": "规模、客户结构、研发投入和海外订单决定竞争位置。",
+        "demand": "重点看储能、海外客户和车企订单兑现。",
+        "risk": "价格竞争、原材料波动和贸易政策会放大估值波动。",
+    },
+    "银行": {
+        "label": "金融防御竞争格局",
+        "peers": ["招商银行", "兴业银行", "工商银行", "江苏银行"],
+        "moat": "资产质量、负债成本、分红稳定性和零售客户基础更关键。",
+        "demand": "重点看净息差、地产链风险和分红政策。",
+        "risk": "息差继续收窄或资产质量走弱，会限制估值修复。",
+    },
+    "电气设备": {
+        "label": "制造景气竞争格局",
+        "peers": ["思源电气", "许继电气", "平高电气", "特变电工"],
+        "moat": "订单质量、交付能力和电网投资节奏影响竞争优势。",
+        "demand": "重点看电网招标、新能源并网和海外订单。",
+        "risk": "订单兑现不及预期或原材料成本上行会压缩利润。",
+    },
+    "default": {
+        "label": "行业竞争格局",
+        "peers": ["同板块龙头", "细分赛道公司", "上下游核心企业"],
+        "moat": "需要结合市场份额、产品定价、成本控制和客户结构判断竞争力。",
+        "demand": "重点看行业景气、订单变化、政策和公司公告。",
+        "risk": "行业景气下行、竞争加剧或数据缺失都会降低判断可靠性。",
     },
 }
 CURRENT_USER_ID: ContextVar[str] = ContextVar("current_user_id", default=DEFAULT_USER_ID)
@@ -2443,6 +2481,120 @@ def market_cap_text(stock: dict[str, Any]) -> str:
     return f"{value:.0f}"
 
 
+def industry_competitive_rules(industry: str | None) -> dict[str, Any]:
+    key = (industry or "").strip()
+    if key in INDUSTRY_COMPETITIVE_RULES:
+        return INDUSTRY_COMPETITIVE_RULES[key]
+    for name, rules in INDUSTRY_COMPETITIVE_RULES.items():
+        if name != "default" and name in key:
+            return rules
+    return INDUSTRY_COMPETITIVE_RULES["default"]
+
+
+def build_industry_competitive_intel(
+    stock: dict[str, Any],
+    *,
+    forecast: dict[str, Any] | None = None,
+    data_quality: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    performance = stock.get("performance", {})
+    day = float(performance.get("day", 0) or 0)
+    week = float(performance.get("week", 0) or 0)
+    month = float(performance.get("month", 0) or 0)
+    forecast_data = forecast or build_stock_forecast(stock)
+    quality = data_quality or stock_data_quality(stock)
+    rules = industry_competitive_rules(stock.get("industry"))
+    market_cap = market_cap_text(stock)
+    news_counts = (stock.get("newsImpact") or {}).get("counts") or {}
+    positive_news = int(news_counts.get("positive", 0) or 0)
+    negative_news = int(news_counts.get("negative", 0) or 0)
+    data_score = int(quality.get("score") or 50)
+    trend_score = clamp_score(50 + month * 1.2 + week * 0.8 + day * 0.5)
+    demand_score = clamp_score(52 + positive_news * 7 - negative_news * 9 + month * 0.7)
+    moat_score = clamp_score(
+        48
+        + (12 if stock.get("tags") else 0)
+        + (10 if market_cap != "待补充" else -5)
+        + (8 if stock.get("industry") and stock.get("industry") != "A股" else 0)
+    )
+    valuation_safety = clamp_score(
+        62
+        - max(0, day - 4) * 2
+        - max(0, month - 12) * 0.8
+        + (8 if forecast_data.get("riskScore", 50) >= 60 else 0)
+    )
+    total = clamp_score(
+        trend_score * 0.26
+        + demand_score * 0.24
+        + moat_score * 0.22
+        + valuation_safety * 0.16
+        + data_score * 0.12
+    )
+
+    if total >= 72 and data_score >= 60:
+        verdict = "竞争力跟踪优先"
+        holding_impact = "如果已经持有，可以把它作为同板块重点样本继续观察。"
+    elif total >= 60:
+        verdict = "竞争力中性偏强"
+        holding_impact = "可以继续看行业信号，但不适合只因为行业热度直接加仓。"
+    elif data_score < 55:
+        verdict = "资料不足，先补证据"
+        holding_impact = "现阶段先补齐行业新闻、公告和财报字段，再提高建议强度。"
+    else:
+        verdict = "竞争压力需观察"
+        holding_impact = "如果已经持有，需要确认它是否仍跑赢同板块核心公司。"
+
+    signals = [
+        {
+            "name": "行业位置",
+            "value": rules["label"],
+            "text": rules["moat"],
+        },
+        {
+            "name": "需求线索",
+            "value": "偏强" if demand_score >= 65 else "待确认" if demand_score >= 48 else "偏弱",
+            "text": rules["demand"],
+        },
+        {
+            "name": "价格和估值",
+            "value": "有缓冲" if valuation_safety >= 65 else "需谨慎",
+            "text": f"今日 {format_change(day)}，近一月 {format_change(month)}，用来判断是否已经透支短期情绪。",
+        },
+    ]
+    risks = [
+        rules["risk"],
+        "竞品扩产、价格战或政策变化可能改变行业排序。",
+    ]
+    if negative_news > positive_news:
+        risks.insert(0, "近期负面新闻更多，行业竞争力判断需要下调权重。")
+    if data_score < 60:
+        risks.append("当前公开数据仍不完整，竞争力结论需要后续数据验证。")
+
+    return {
+        "version": COMPETITIVE_INTEL_VERSION,
+        "title": "行业竞争力",
+        "total": total,
+        "verdict": verdict,
+        "summary": f"{stock.get('name', stock.get('code'))}在{stock.get('industry') or '所属行业'}中的竞争力评分 {total}，{verdict}。",
+        "marketPosition": {
+            "label": rules["label"],
+            "marketCap": market_cap,
+            "industry": stock.get("industry") or "待识别",
+        },
+        "peerSet": rules["peers"],
+        "signals": signals,
+        "risks": risks[:3],
+        "watchSignals": [
+            "同板块龙头的涨跌是否同步，若明显落后需要复盘原因。",
+            "公告、财报和订单数据是否支持行业需求继续改善。",
+            "价格上涨是否伴随成交量和基本面证据，而不是单日情绪。",
+        ],
+        "holdingImpact": holding_impact,
+        "dataNote": "第一版为规则化行业情报框架，后续可接入实时网页、公告和评价数据增强。",
+        "updated": now_text(),
+    }
+
+
 def build_research_framework(
     stock: dict[str, Any],
     *,
@@ -2460,6 +2612,7 @@ def build_research_framework(
     current_price = stock_price_number(stock)
     forecast_data = forecast or build_stock_forecast(stock)
     quality = data_quality or stock_data_quality(stock)
+    competitive_intel = build_industry_competitive_intel(stock, forecast=forecast_data, data_quality=quality)
     news_impact = stock.get("newsImpact") or {}
     news_counts = news_impact.get("counts") or {}
     risk_profile = risk_profile_rules(risk_level)
@@ -2621,6 +2774,7 @@ def build_research_framework(
         "conclusion": conclusion,
         "summary": f"{stock.get('name', stock.get('code'))}当前研究评分 {weighted_total}，{conclusion}。",
         "groups": groups,
+        "competitiveIntel": competitive_intel,
         "bullCase": [f"{item['title']}：{item['summary']}" for item in top_groups],
         "bearCase": [f"{item['title']}：{item['watch']}" for item in weak_groups],
         "dataGaps": quality.get("warnings", [])[:3],
@@ -3007,6 +3161,11 @@ def score_stock_analysis(stock: dict[str, Any]) -> dict[str, Any]:
         forecast=forecast,
         data_quality=data_quality,
     )
+    competitive_intel = research_framework.get("competitiveIntel") or build_industry_competitive_intel(
+        stock,
+        forecast=forecast,
+        data_quality=data_quality,
+    )
     analysis = {
         "modelVersion": ADVICE_MODEL_VERSION,
         "total": total_score,
@@ -3022,6 +3181,7 @@ def score_stock_analysis(stock: dict[str, Any]) -> dict[str, Any]:
         "advice": advice_engine,
         "forecast": forecast,
         "researchFramework": research_framework,
+        "competitiveIntel": competitive_intel,
         "dataQuality": data_quality,
         "sourceTrust": data_quality.get("sourceTrust"),
         "compliance": compliance_disclosure(forecast.get("confidence", {}).get("label")),

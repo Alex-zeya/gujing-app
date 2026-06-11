@@ -405,6 +405,30 @@ function stockListToMap(list) {
   }, {})
 }
 
+function mergeStockRecord(existing, incoming) {
+  if (!existing) return incoming
+  if (!incoming) return existing
+  return {
+    ...existing,
+    ...incoming,
+    analysisScore: incoming.analysisScore ?? existing.analysisScore,
+    dataQuality: incoming.dataQuality ?? existing.dataQuality,
+    klineRows: incoming.klineRows ?? existing.klineRows,
+    newsImpact: incoming.newsImpact ?? existing.newsImpact,
+    sourceTrust: incoming.sourceTrust ?? existing.sourceTrust,
+  }
+}
+
+function mergeStockCatalog(current, incomingList) {
+  const next = { ...current }
+  incomingList.forEach((stock) => {
+    if (!stock?.code) return
+    const clean = cleanCode(stock.code)
+    next[clean] = mergeStockRecord(next[clean], { ...stock, code: clean })
+  })
+  return next
+}
+
 function createSearchSeedStock(stock, index = 0) {
   const base = Number((58 + (index % 5) * 2).toFixed(2))
   return {
@@ -955,11 +979,13 @@ function App() {
         ])
 
         if (!isMounted) return
-        setStockCatalog((current) => ({
-          ...searchSeedStocks,
-          ...current,
-          ...stockListToMap([...stockList, ...recommendations]),
-        }))
+        setStockCatalog((current) => mergeStockCatalog(
+          {
+            ...searchSeedStocks,
+            ...current,
+          },
+          [...stockList, ...recommendations],
+        ))
         setRecommendedStocks(recommendations)
         setMarketOverview(overview)
         setWatchlist(watchItems.map((stock) => stock.code))
@@ -1007,10 +1033,7 @@ function App() {
         ])
         setMarketOverview(overview)
         setRecommendedStocks(recommendations)
-        setStockCatalog((current) => ({
-          ...current,
-          ...stockListToMap(recommendations),
-        }))
+        setStockCatalog((current) => mergeStockCatalog(current, recommendations))
         setAlertEvents(alertFeed.events ?? [])
         setAlertUnreadCount(alertFeed.unreadCount ?? 0)
         setAlertMonitorStatus(alertFeed.status ?? null)
@@ -1043,10 +1066,7 @@ function App() {
           { signal: controller.signal },
         )
         if (controller.signal.aborted) return
-        setStockCatalog((current) => ({
-          ...current,
-          ...stockListToMap(backendMatches),
-        }))
+        setStockCatalog((current) => mergeStockCatalog(current, backendMatches))
         setSearchSuggestions(mergeStockLists(localMatches, backendMatches, 8))
         setApiStatus('connected')
       } catch {
@@ -1188,10 +1208,7 @@ function App() {
       const cnResults = results.filter((item) => item.market === 'cn')
       const mergedResults = mergeStockLists(localMatches, cnResults, 8)
       if (mergedResults.length > 1) {
-        setStockCatalog((current) => ({
-          ...current,
-          ...stockListToMap(mergedResults),
-        }))
+        setStockCatalog((current) => mergeStockCatalog(current, mergedResults))
         setSearchSuggestions(mergedResults)
         setIsSearchFocused(true)
         setSearchNotice(`找到 ${mergedResults.length} 只相关股票，点企业名称进入分析。`)
@@ -1200,10 +1217,7 @@ function App() {
       }
       if (mergedResults.length === 1) {
         const matchedStock = mergedResults[0]
-        setStockCatalog((current) => ({
-          ...current,
-          [matchedStock.code]: matchedStock,
-        }))
+        setStockCatalog((current) => mergeStockCatalog(current, [matchedStock]))
         selectStockForAnalysis(matchedStock, displayQuery || matchedStock.name)
         setApiStatus('connected')
         return
@@ -1238,14 +1252,25 @@ function App() {
 
   async function hydrateStockForAnalysis(code) {
     try {
-      const data = await apiJson(`/api/stocks/${code}/kline`)
-      const updatedStock = data.stock
-        ? { ...data.stock, klineRows: data.candles ?? data.stock.klineRows }
+      const [klineResult, analysisResult] = await Promise.allSettled([
+        apiJson(`/api/stocks/${code}/kline`),
+        apiJson(`/api/stocks/${code}/analysis`),
+      ])
+      const klineData = klineResult.status === 'fulfilled' ? klineResult.value : null
+      const analysisData = analysisResult.status === 'fulfilled' ? analysisResult.value : null
+      const baseStock = klineData?.stock ?? stockCatalogRef.current[code]
+      const updatedStock = baseStock
+        ? {
+            ...baseStock,
+            ...(analysisData?.analysisScore ? { analysisScore: analysisData.analysisScore } : {}),
+            ...(analysisData?.newsImpact ? { newsImpact: analysisData.newsImpact } : {}),
+            klineRows: klineData?.candles ?? baseStock.klineRows,
+          }
         : null
       if (updatedStock) {
         setStockCatalog((current) => ({
           ...current,
-          [updatedStock.code]: updatedStock,
+          [cleanCode(updatedStock.code)]: updatedStock,
         }))
       }
       setApiStatus('connected')
@@ -1695,11 +1720,13 @@ function App() {
         apiJson('/api/user/summary'),
         apiJson('/api/system/readiness'),
       ])
-      setStockCatalog((current) => ({
-        ...searchSeedStocks,
-        ...current,
-        ...stockListToMap([...stockList, ...recommendations]),
-      }))
+      setStockCatalog((current) => mergeStockCatalog(
+        {
+          ...searchSeedStocks,
+          ...current,
+        },
+        [...stockList, ...recommendations],
+      ))
       setRecommendedStocks(recommendations)
       setMarketOverview(overview)
       setPortfolio(portfolioSnapshotToItems(portfolioSnapshot))
@@ -2263,6 +2290,7 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
   const dataQuality = analysisScore.dataQuality
   const industryModel = analysisScore.industryModel ?? analysisScore.advice?.industryModel
   const researchFramework = analysisScore.researchFramework ?? analysisScore.advice?.researchFramework
+  const competitiveIntel = analysisScore.competitiveIntel ?? researchFramework?.competitiveIntel
   const compliance = analysisScore.compliance
   const newsImpact = stock.newsImpact
 
@@ -2358,6 +2386,56 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
               </div>
             </div>
             <small>{researchFramework.compliance}</small>
+          </div>
+        </details>
+      )}
+
+      {competitiveIntel && (
+        <details className="analysis-disclosure competitive-intel">
+          <summary>
+            <span>查看行业竞争力</span>
+            <strong>{competitiveIntel.verdict}</strong>
+            <ChevronRight size={17} />
+          </summary>
+          <div className="competitive-intel-card">
+            <div className="competitive-intel-head">
+              <div>
+                <span>{competitiveIntel.title}</span>
+                <strong>{competitiveIntel.total}</strong>
+              </div>
+              <p>{competitiveIntel.summary}</p>
+            </div>
+            <div className="competitive-peer-strip" aria-label="主要对比公司">
+              {competitiveIntel.peerSet?.slice(0, 5).map((peer) => (
+                <span key={peer}>{peer}</span>
+              ))}
+            </div>
+            <div className="competitive-signal-list">
+              {competitiveIntel.signals?.slice(0, 3).map((signal) => (
+                <article key={signal.name}>
+                  <div>
+                    <span>{signal.name}</span>
+                    <strong>{signal.value}</strong>
+                  </div>
+                  <p>{signal.text}</p>
+                </article>
+              ))}
+            </div>
+            <div className="competitive-impact">
+              <span>对持仓的影响</span>
+              <p>{competitiveIntel.holdingImpact}</p>
+            </div>
+            <div className="competitive-intel-lists">
+              <div>
+                <span>继续看什么</span>
+                {competitiveIntel.watchSignals?.slice(0, 2).map((item) => <p key={item}>{item}</p>)}
+              </div>
+              <div>
+                <span>主要风险</span>
+                {competitiveIntel.risks?.slice(0, 2).map((item) => <p key={item}>{item}</p>)}
+              </div>
+            </div>
+            <small>{competitiveIntel.dataNote}</small>
           </div>
         </details>
       )}
