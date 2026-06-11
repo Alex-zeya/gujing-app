@@ -4344,6 +4344,68 @@ def rows_to_dicts(data: dict[str, Any]) -> list[dict[str, Any]]:
     return [dict(zip(fields, item)) for item in data.get("items", [])]
 
 
+def refresh_tushare_daily_basic(code: str, trade_date: str | None = None) -> dict[str, Any]:
+    clean = clean_code(code)
+    stock = get_stock_or_404(clean)
+    fields = (
+        "ts_code,trade_date,close,turnover_rate,turnover_rate_f,volume_ratio,"
+        "pe,pe_ttm,pb,ps,ps_ttm,dv_ratio,dv_ttm,total_share,float_share,"
+        "free_share,total_mv,circ_mv"
+    )
+    params: dict[str, Any] = {"ts_code": tushare_symbol(clean)}
+    if trade_date:
+        params["trade_date"] = trade_date
+    else:
+        params["start_date"] = (datetime.now() - timedelta(days=14)).strftime("%Y%m%d")
+        params["end_date"] = datetime.now().strftime("%Y%m%d")
+    data = tushare_query("daily_basic", params, fields)
+    rows = rows_to_dicts(data)
+    if not rows:
+        raise RuntimeError("TUSHARE_EMPTY_DAILY_BASIC")
+
+    row = sorted(rows, key=lambda item: str(item.get("trade_date") or ""))[-1]
+    total_mv = number_or_none(row.get("total_mv"))
+    circ_mv = number_or_none(row.get("circ_mv"))
+    close = number_or_none(row.get("close"))
+    stock = {**stock}
+    if close and close > 0:
+        stock["price"] = price_to_text(close)
+    stock["quoteStats"] = {
+        **stock.get("quoteStats", {}),
+        "marketCap": compact_yuan(total_mv * 10000) if total_mv is not None else (stock.get("quoteStats") or {}).get("marketCap"),
+        "floatMarketCap": compact_yuan(circ_mv * 10000) if circ_mv is not None else (stock.get("quoteStats") or {}).get("floatMarketCap"),
+        "pe": number_or_none(row.get("pe")),
+        "peTtm": number_or_none(row.get("pe_ttm")),
+        "pb": number_or_none(row.get("pb")),
+        "ps": number_or_none(row.get("ps")),
+        "psTtm": number_or_none(row.get("ps_ttm")),
+        "turnoverRate": number_or_none(row.get("turnover_rate")),
+        "turnoverRateFree": number_or_none(row.get("turnover_rate_f")),
+        "volumeRatio": number_or_none(row.get("volume_ratio")),
+        "dividendRatio": number_or_none(row.get("dv_ratio")),
+        "dividendTtm": number_or_none(row.get("dv_ttm")),
+        "totalShare": number_or_none(row.get("total_share")),
+        "floatShare": number_or_none(row.get("float_share")),
+        "freeShare": number_or_none(row.get("free_share")),
+        "fundamentalTradeDate": row.get("trade_date"),
+        "fundamentalSource": "tushare:daily_basic",
+    }
+    stock["dataCoverage"] = {**stock.get("dataCoverage", {}), "fundamental": True}
+    stock["sourceTrust"] = stock_source_trust(stock)
+    stock["cache"] = {
+        **stock.get("cache", {}),
+        "fundamentalRefreshedAt": now_text(),
+        "fundamentalTradeDate": row.get("trade_date"),
+    }
+    stock["metrics"] = [
+        ["企业市值", stock["quoteStats"].get("marketCap") or "待补充", "Tushare"],
+        ["PE", compact_metric_text(stock["quoteStats"].get("pe") or stock["quoteStats"].get("peTtm")), "估值"],
+        ["PB", compact_metric_text(stock["quoteStats"].get("pb")), "估值"],
+    ]
+    upsert_stock(stock)
+    return stock
+
+
 def refresh_tushare_history(code: str) -> dict[str, Any]:
     clean = clean_code(code)
     stock = get_stock_or_404(clean)
@@ -4399,6 +4461,8 @@ def refresh_tushare_history(code: str) -> dict[str, Any]:
     stock["klineSource"] = "Tushare daily"
     stock["pulse"] = f"已补充历史日K，近一月走势 {format_change(stock['performance']['month'])}。"
     upsert_stock(stock)
+    with suppress(Exception):
+        stock = refresh_tushare_daily_basic(clean, str(last_row["trade_date"]))
     return stock
 
 
@@ -4700,6 +4764,26 @@ def quote_stats_need_extension(stock: dict[str, Any]) -> bool:
     return not bool(stats.get("marketCap") and (stats.get("amount") or stats.get("volume")))
 
 
+def fundamental_cache_is_stale(stock: dict[str, Any], max_age_minutes: int = 360) -> bool:
+    stats = stock.get("quoteStats") or {}
+    failed_at = (stock.get("cache") or {}).get("fundamentalFailedAt")
+    if failed_at and not timestamp_is_stale(failed_at, max_age_minutes):
+        return False
+    refreshed_at = (stock.get("cache") or {}).get("fundamentalRefreshedAt")
+    return not stats.get("marketCap") or timestamp_is_stale(refreshed_at, max_age_minutes)
+
+
+def mark_fundamental_refresh_error(code: str, error: Exception) -> None:
+    with suppress(Exception):
+        stock = get_stock_or_404(code)
+        stock["cache"] = {
+            **stock.get("cache", {}),
+            "fundamentalFailedAt": now_text(),
+            "fundamentalError": str(error)[:180],
+        }
+        upsert_stock(stock)
+
+
 def refresh_cached_quotes(
     codes: list[str],
     max_age_minutes: int = QUOTE_CACHE_MINUTES,
@@ -4783,6 +4867,13 @@ def hydrate_stock_market_data(code: str, force_history: bool = False) -> dict[st
     stock = ensure_stock_history(clean, 0 if force_history else HISTORY_CACHE_MINUTES)
     with suppress(Exception):
         refresh_cached_quotes([clean])
+    with suppress(Exception):
+        stock_for_fundamental = get_stock_or_404(clean)
+        if fundamental_cache_is_stale(stock_for_fundamental):
+            try:
+                refresh_tushare_daily_basic(clean)
+            except Exception as error:
+                mark_fundamental_refresh_error(clean, error)
     stock = apply_analysis_score(apply_snapshot_history(get_stock_or_404(clean)))
     quality = stock_data_quality(stock)
     stock["dataQuality"] = quality
@@ -5501,7 +5592,17 @@ def search_result_summary(stock: dict[str, Any]) -> dict[str, Any]:
             "previousClose": quote_stats.get("previousClose"),
             "dayHigh": quote_stats.get("dayHigh"),
             "dayLow": quote_stats.get("dayLow"),
+            "volume": quote_stats.get("volume"),
+            "amount": quote_stats.get("amount"),
             "marketCap": quote_stats.get("marketCap"),
+            "floatMarketCap": quote_stats.get("floatMarketCap"),
+            "pe": quote_stats.get("pe"),
+            "peTtm": quote_stats.get("peTtm"),
+            "pb": quote_stats.get("pb"),
+            "turnoverRate": quote_stats.get("turnoverRate"),
+            "volumeRatio": quote_stats.get("volumeRatio"),
+            "fundamentalTradeDate": quote_stats.get("fundamentalTradeDate"),
+            "fundamentalSource": quote_stats.get("fundamentalSource"),
             "source": quote_stats.get("source") or quote.get("source"),
         },
         "updated": stock.get("updated") or stock.get("cache", {}).get("quoteRefreshedAt") or "待同步",
@@ -5578,6 +5679,15 @@ def stocks_history_refresh(code: str) -> dict[str, Any]:
         stock["historyProviderErrors"] = errors
         upsert_stock(stock)
         raise HTTPException(status_code=422, detail="; ".join(errors)) from error
+
+
+@app.post("/api/stocks/{code}/fundamentals/refresh")
+def stocks_fundamentals_refresh(code: str) -> dict[str, Any]:
+    try:
+        stock = apply_analysis_score(refresh_tushare_daily_basic(code))
+        return stock
+    except Exception as error:
+        raise HTTPException(status_code=422, detail=f"tushare:daily_basic:{error}") from error
 
 
 @app.get("/api/stocks/{code}/kline")
@@ -6046,6 +6156,7 @@ def system_readiness_payload() -> dict[str, Any]:
         "tushare": {
             "ok": bool(get_tushare_token()),
             "configured": bool(get_tushare_token()),
+            "apis": ["daily", "daily_basic"] if get_tushare_token() else [],
         },
         "cors": {
             "ok": True,

@@ -157,9 +157,9 @@ X-Device-Name: Alex 的 iPhone
 
 这不是一次性补全历史，而是从今天开始积累自己的历史库。积累到 20 个交易日后，后端会用自建快照计算近一月走势和 K线，作为持仓建议的免费数据基础。
 
-## 历史 K线
+## 历史 K线和基本面字段
 
-历史日 K 优先使用 Tushare。需要配置 token：
+历史日 K 优先使用 Tushare。市值、PE、PB、换手率、量比等基础估值字段使用 Tushare `daily_basic`。需要配置 token：
 
 ```bash
 export TUSHARE_TOKEN="你的 token"
@@ -174,14 +174,21 @@ curl -X POST http://localhost:8010/api/data/tushare/token \
   -d '{"token":"你的 token"}'
 ```
 
-配置后，前端搜索股票时会自动尝试调用 `POST /api/stocks/{code}/history/refresh` 补充历史日 K、近一月走势和 K线图数据。
+配置后，前端搜索股票时会自动尝试调用 `POST /api/stocks/{code}/history/refresh` 补充历史日 K、近一月走势和 K线图数据。股票详情页会在基本面缓存缺失或过期时自动尝试补充 `daily_basic`。
 
-如果当前 Tushare token 没有 `daily` 接口权限，后端会自动切到东方财富公开日 K 接口，先让 App 立即拿到历史价格、K线图和近一月走势。
+也可以单独刷新某只股票的基础估值字段：
+
+```bash
+curl -X POST http://localhost:8010/api/stocks/300750/fundamentals/refresh
+```
+
+如果当前 Tushare token 没有 `daily` 接口权限，后端会自动切到东方财富公开日 K 接口，先让 App 立即拿到历史价格、K线图和近一月走势。如果 token 没有 `daily_basic` 权限，后端会记录失败缓存，避免每次打开股票详情都重复请求；前端会继续显示实时行情，并把缺失字段标记为“数据源暂缺”。
 
 当前 MVP 的数据路径：
 
 - 实时/准实时价格：`easyquotation`，用于全 A股搜索、当前价、今日涨跌。
 - 历史日 K：Tushare 优先，东方财富公开接口兜底。
+- 基础估值字段：Tushare `daily_basic` 优先，包括市值、PE、PB、换手率、量比等。
 - 自建日快照：每天调用 `POST /api/data/snapshot` 后逐步沉淀自己的行情库。
 
 东方财富公开接口适合前期验证产品体验，但它不是正式授权的数据服务，可能出现限流、字段变化或临时不可用。正式上线前建议补一个稳定授权数据源。
