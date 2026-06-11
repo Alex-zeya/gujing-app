@@ -15,6 +15,7 @@
 - 隐私政策网页：`/privacy.html`，上线时需要替换成公开 HTTPS URL
 - 后端 API：上线时使用 HTTPS 公开域名，不能依赖 `localhost` 或局域网地址
 - 测试账号：需要在 App Store Connect 的 Review Notes 提供一个可登录手机号和验证码说明
+- 上线准备度：App 内“我的 > 运行监控”需要显示关键门槛已通过或只剩非阻塞项
 
 ## 登录和账号
 

@@ -577,7 +577,12 @@ class PortfolioFlowTest(unittest.TestCase):
 
         self.assertIn("checks", readiness)
         self.assertIn("database", readiness["checks"])
+        self.assertIn("deployment", readiness["checks"])
         self.assertTrue(readiness["checks"]["database"]["ok"])
+        self.assertIn("launch", readiness)
+        self.assertIn("percent", readiness["launch"])
+        self.assertIn("gates", readiness["launch"])
+        self.assertTrue(any(gate["id"] == "auth" for gate in readiness["launch"]["gates"]))
         self.assertTrue(errors)
         self.assertEqual(errors[0]["message"], "TestError")
 

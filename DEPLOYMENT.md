@@ -23,6 +23,8 @@
 - `GUJING_DB_PATH`：仅本地 SQLite 开发使用。线上不要依赖 Web 服务本地文件保存用户数据。
 - `SMS_PROVIDER`：前期可以用 `mock` 测试，正式短信需要换成 `aliyun` 或 `tencent` 并配置对应密钥。
 - `TUSHARE_TOKEN`：历史 K 线数据 token。
+- `PRIVACY_POLICY_URL`：公开 HTTPS 隐私政策地址，App Store 审核需要。
+- `APNS_KEY_ID` / `APNS_TEAM_ID` / `APNS_BUNDLE_ID`：如果首版要做 iOS 系统推送，需要配置 Apple Push Notification 服务。
 
 ## Render
 
@@ -36,6 +38,19 @@
 - Render 免费 PostgreSQL 适合测试，有期限和资源限制；正式上线前建议换成付费数据库或外部持久数据库。
 - `CORS_ORIGINS` 需要在拿到正式前端域名后补上。
 - 部署后先打开 `https://你的后端域名/api/system/readiness`，确认 `database.mode` 是 `postgres`，`missingTables` 为空。
+- App 内“我的 > 运行监控”会展示上线准备度。若仍显示生产数据库、登录验证、隐私政策或 iOS 后端地址未完成，先补这些配置再提交审核。
+
+也可以直接用命令检查：
+
+```bash
+npm run readiness -- https://你的后端域名
+```
+
+本地检查使用：
+
+```bash
+npm run readiness
+```
 
 ## Railway / Fly.io
 

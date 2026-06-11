@@ -6638,12 +6638,20 @@ def system_readiness_payload() -> dict[str, Any]:
         },
         "cors": {
             "ok": True,
-            "allowedOrigins": ["http://localhost:5173", "http://127.0.0.1:5173"],
+            "allowedOrigins": CORS_ORIGINS,
         },
         "frontend": {
             "ok": True,
-            "expectedApiBaseUrl": "http://localhost:8010",
+            "expectedApiBaseUrl": os.getenv("RENDER_EXTERNAL_URL") or "http://localhost:8010",
             "viteEnv": "VITE_API_BASE_URL 可覆盖，默认 http://localhost:8010",
+        },
+        "deployment": {
+            "ok": os.getenv("APP_ENV", "development") == "production" and bool(os.getenv("RENDER_EXTERNAL_URL", "").startswith("https://")),
+            "appEnv": os.getenv("APP_ENV", "development"),
+            "isRender": bool(os.getenv("RENDER_SERVICE_NAME")),
+            "serviceName": os.getenv("RENDER_SERVICE_NAME"),
+            "serviceUrl": os.getenv("RENDER_EXTERNAL_URL"),
+            "gitCommit": os.getenv("RENDER_GIT_COMMIT"),
         },
         "tasks": {
             "ok": not task_errors,
@@ -6660,10 +6668,113 @@ def system_readiness_payload() -> dict[str, Any]:
     status = "ready" if all(checks[key]["ok"] for key in required_ok) else "blocked"
     if status == "ready" and any(not checks[key]["ok"] for key in optional_ok):
         status = "needs_config"
+    launch = launch_readiness_payload(checks)
     return {
         "status": status,
         "updatedAt": now_text(),
         "checks": checks,
+        "launch": launch,
+    }
+
+
+def launch_readiness_payload(checks: dict[str, Any]) -> dict[str, Any]:
+    app_env = os.getenv("APP_ENV", "development")
+    service_url = checks.get("deployment", {}).get("serviceUrl") or ""
+    privacy_url = os.getenv("PRIVACY_POLICY_URL", "").strip()
+    cors_origins = checks.get("cors", {}).get("allowedOrigins", [])
+    production_origins = [
+        origin
+        for origin in cors_origins
+        if origin.startswith("https://") or origin.startswith("capacitor://") or origin.startswith("ionic://") or origin.startswith("gujing://")
+    ]
+    gates = [
+        {
+            "id": "backend",
+            "label": "后端服务",
+            "ok": bool(checks.get("database", {}).get("ok") and checks.get("data", {}).get("ok")),
+            "required": True,
+            "summary": "API、数据库和行情状态可用。",
+            "next": "如果失败，先检查数据库表、行情刷新任务和 Render 日志。",
+        },
+        {
+            "id": "database",
+            "label": "生产数据库",
+            "ok": checks.get("database", {}).get("mode") == "postgres",
+            "required": True,
+            "summary": "正式上线需要 PostgreSQL 或同级持久数据库。",
+            "next": "Render 上确认 DATABASE_URL 已生效，/api/system/readiness 显示 postgres。",
+        },
+        {
+            "id": "auth",
+            "label": "登录验证",
+            "ok": bool(checks.get("sms", {}).get("ok") and checks.get("sms", {}).get("provider") != "mock"),
+            "required": True,
+            "summary": "正式用户需要真实短信服务，mock 只适合测试。",
+            "next": "配置阿里云或腾讯云短信，并把 SMS_PROVIDER 从 mock 切走。",
+        },
+        {
+            "id": "data",
+            "label": "行情和K线",
+            "ok": bool(checks.get("tushare", {}).get("ok") and checks.get("data", {}).get("mode") in {"live", "fallback"}),
+            "required": True,
+            "summary": "A股搜索、行情、历史K线和分析建议需要稳定数据。",
+            "next": "保持免费源兜底，同时准备授权数据源或稳定 Token。",
+        },
+        {
+            "id": "ios_api",
+            "label": "iOS 后端地址",
+            "ok": app_env == "production" and service_url.startswith("https://") and bool(production_origins),
+            "required": True,
+            "summary": "真机和 TestFlight 不能依赖 localhost。",
+            "next": "Render 上确认 RENDER_EXTERNAL_URL 存在，并把 .env.ios 的 VITE_API_BASE_URL 指向这个 HTTPS 地址。",
+        },
+        {
+            "id": "privacy",
+            "label": "隐私政策",
+            "ok": privacy_url.startswith("https://"),
+            "required": True,
+            "summary": "App Store 需要公开 HTTPS 隐私政策 URL。",
+            "next": "部署 privacy.html，并配置 PRIVACY_POLICY_URL。",
+        },
+        {
+            "id": "compliance",
+            "label": "金融合规文案",
+            "ok": True,
+            "required": True,
+            "summary": "当前定位为研究辅助和风险观察，不承诺收益。",
+            "next": "上线前继续检查所有建议类文案，避免出现保证收益或直接买卖指令。",
+        },
+        {
+            "id": "push",
+            "label": "系统通知",
+            "ok": bool(os.getenv("APNS_KEY_ID") and os.getenv("APNS_TEAM_ID") and os.getenv("APNS_BUNDLE_ID")),
+            "required": False,
+            "summary": "观察提醒已有业务规则，真正 iOS 推送还需要 APNs。",
+            "next": "如果首版不做系统推送，可以在 App Store 说明中不申请通知权限。",
+        },
+        {
+            "id": "wechat",
+            "label": "微信登录",
+            "ok": bool(checks.get("wechat", {}).get("ok")),
+            "required": False,
+            "summary": "微信登录是增强项，不影响手机号登录首版。",
+            "next": "如保留按钮，需要完成微信开放平台移动应用配置。",
+        },
+    ]
+    required = [gate for gate in gates if gate["required"]]
+    completed_required = [gate for gate in required if gate["ok"]]
+    blocked_required = [gate for gate in required if not gate["ok"]]
+    percent = round(len(completed_required) / len(required) * 100) if required else 100
+    status = "ready_for_review" if not blocked_required else "needs_work"
+    if blocked_required and len(completed_required) >= max(1, len(required) - 2):
+        status = "nearly_ready"
+    return {
+        "status": status,
+        "percent": percent,
+        "summary": "核心链路已接通，剩余重点是生产配置、真实登录和数据源稳定性。" if blocked_required else "上线必备项已通过，可以进入 TestFlight/审核材料准备。",
+        "gates": gates,
+        "blocked": blocked_required,
+        "nextStep": (blocked_required[0]["next"] if blocked_required else "准备 TestFlight 真机回归和 App Store 素材。"),
     }
 
 

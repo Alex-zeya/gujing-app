@@ -17,6 +17,38 @@ services:
         fromDatabase:
           name: gujing-db
           property: connectionString
+      - key: TUSHARE_TOKEN
+        sync: false
+      - key: PRIVACY_POLICY_URL
+        sync: false
+      - key: ALIYUN_SMS_ACCESS_KEY_ID
+        sync: false
+      - key: ALIYUN_SMS_ACCESS_KEY_SECRET
+        sync: false
+      - key: ALIYUN_SMS_SIGN_NAME
+        sync: false
+      - key: ALIYUN_SMS_TEMPLATE_CODE
+        sync: false
+      - key: TENCENT_SMS_SECRET_ID
+        sync: false
+      - key: TENCENT_SMS_SECRET_KEY
+        sync: false
+      - key: TENCENT_SMS_SDK_APP_ID
+        sync: false
+      - key: TENCENT_SMS_SIGN_NAME
+        sync: false
+      - key: TENCENT_SMS_TEMPLATE_ID
+        sync: false
+      - key: WECHAT_APP_ID
+        sync: false
+      - key: WECHAT_APP_SECRET
+        sync: false
+      - key: APNS_KEY_ID
+        sync: false
+      - key: APNS_TEAM_ID
+        sync: false
+      - key: APNS_BUNDLE_ID
+        sync: false
 databases:
   - name: gujing-db
     plan: free

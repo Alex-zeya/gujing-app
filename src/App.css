@@ -5248,6 +5248,112 @@
   line-height: 1.55;
 }
 
+.launch-readiness-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid oklch(0.78 0.06 255);
+  border-radius: 12px;
+  padding: 12px;
+  background: linear-gradient(180deg, oklch(0.975 0.015 245), var(--surface));
+}
+
+.launch-readiness-head,
+.launch-next-step,
+.launch-gate-list div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.launch-readiness-head span,
+.launch-next-step span,
+.launch-gate-list span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.launch-readiness-head strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--primary);
+  font-size: 26px;
+  font-weight: 960;
+  line-height: 1;
+}
+
+.launch-readiness-head em {
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: oklch(0.91 0.035 255);
+  color: var(--primary);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.launch-progress-track {
+  overflow: hidden;
+  height: 8px;
+  border-radius: 999px;
+  background: oklch(0.9 0.012 255);
+}
+
+.launch-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+}
+
+.launch-readiness-card p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 1.45;
+}
+
+.launch-next-step {
+  align-items: flex-start;
+  border-radius: 10px;
+  padding: 10px;
+  background: white;
+}
+
+.launch-next-step strong {
+  flex: 1;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 860;
+  line-height: 1.45;
+  text-align: right;
+}
+
+.launch-gate-list {
+  display: grid;
+  gap: 7px;
+}
+
+.launch-gate-list div {
+  align-items: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 10px;
+  background: oklch(0.99 0.005 255);
+}
+
+.launch-gate-list strong {
+  flex: 1;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 820;
+  line-height: 1.4;
+  text-align: right;
+}
+
 .ops-action-list {
   display: grid;
   gap: 7px;

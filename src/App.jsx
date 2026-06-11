@@ -4539,6 +4539,13 @@ function ProfileView({
 
 function OperationalMonitorCard({ systemMonitor, systemStatus }) {
   const score = systemMonitor?.score ?? (systemStatus?.status === 'ready' ? 90 : systemStatus?.status === 'needs_config' ? 72 : 50)
+  const launch = systemStatus?.launch
+  const launchPercent = launch?.percent ?? 0
+  const launchStatusLabel = launch?.status === 'ready_for_review'
+    ? '可准备审核'
+    : launch?.status === 'nearly_ready'
+      ? '接近可上线'
+      : '上线前待处理'
   const statusLabel = systemMonitor?.status === 'healthy'
     ? '运行正常'
     : systemMonitor?.status === 'degraded'
@@ -4593,6 +4600,35 @@ function OperationalMonitorCard({ systemMonitor, systemStatus }) {
           行情覆盖约 {dataSignal?.quoteCoverage ?? 0}%，历史 K 线覆盖约 {dataSignal?.historyCoverage ?? 0}%。
         </p>
       </div>
+      {launch && (
+        <div className="launch-readiness-card">
+          <div className="launch-readiness-head">
+            <div>
+              <span>上线准备度</span>
+              <strong>{launchPercent}%</strong>
+            </div>
+            <em>{launchStatusLabel}</em>
+          </div>
+          <div className="launch-progress-track" aria-label={`上线准备度 ${launchPercent}%`}>
+            <span style={{ width: `${Math.max(4, Math.min(100, launchPercent))}%` }} />
+          </div>
+          <p>{launch.summary}</p>
+          <div className="launch-next-step">
+            <span>下一步</span>
+            <strong>{launch.nextStep}</strong>
+          </div>
+          {launch.blocked?.length > 0 && (
+            <div className="launch-gate-list">
+              {launch.blocked.slice(0, 3).map((gate) => (
+                <div key={gate.id}>
+                  <span>{gate.label}</span>
+                  <strong>{gate.summary}</strong>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       <div className="system-check-grid">
         {monitorRows.map((row) => (
           <div key={row.label}>
