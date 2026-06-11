@@ -1865,6 +1865,40 @@ function App() {
     }
   }
 
+  async function runDailyBackfill() {
+    setIsRefreshingData(true)
+    try {
+      await apiJson('/api/data/backfill/daily', {
+        method: 'POST',
+        timeoutMs: 60000,
+        body: JSON.stringify({ limit: 5, force: false }),
+      })
+      const [stockList, recommendations, providerStatus, taskData, monitor] = await Promise.all([
+        apiJson('/api/stocks'),
+        apiJson('/api/recommendations/today'),
+        apiJson('/api/data/status'),
+        apiJson('/api/tasks/status'),
+        apiJson('/api/system/monitor'),
+      ])
+      setStockCatalog((current) => mergeStockCatalog(
+        {
+          ...searchSeedStocks,
+          ...current,
+        },
+        [...stockList, ...recommendations],
+      ))
+      setRecommendedStocks(recommendations)
+      setDataStatus(providerStatus)
+      setTaskStatus(taskData)
+      setSystemMonitor(monitor)
+      setApiStatus('connected')
+    } catch {
+      setApiStatus('offline')
+    } finally {
+      setIsRefreshingData(false)
+    }
+  }
+
   async function checkAlertEvents() {
     setIsCheckingAlerts(true)
     try {
@@ -2039,6 +2073,7 @@ function App() {
             dataStatus={dataStatus}
             taskStatus={taskStatus}
             refreshMarketData={refreshMarketData}
+            runDailyBackfill={runDailyBackfill}
             isRefreshingData={isRefreshingData}
             checkAlertEvents={checkAlertEvents}
             isCheckingAlerts={isCheckingAlerts}
@@ -5016,6 +5051,7 @@ function WatchView({
   dataStatus,
   taskStatus,
   refreshMarketData,
+  runDailyBackfill,
   isRefreshingData,
   checkAlertEvents,
   isCheckingAlerts,
@@ -5078,6 +5114,14 @@ function WatchView({
     market_universe: {
       title: '市场扫描',
       userText: '刷新全市场强弱，给首页推荐和涨跌榜提供依据。',
+    },
+    free_fundamentals: {
+      title: '基础字段',
+      userText: '每天补企业市值、成交额、估值等公开字段。',
+    },
+    daily_data_backfill: {
+      title: '每日补全',
+      userText: '优先补持仓、观察池和常看股票的 K 线、行情和基础字段。',
     },
   }
 
@@ -5341,6 +5385,16 @@ function WatchView({
                 </div>
               </div>
             )}
+            {dataStatus?.dailyBackfill?.lastRefresh && (
+              <div className="daily-backfill-card">
+                <div>
+                  <span>每日补全</span>
+                  <strong>{dataStatus.dailyBackfill.syncedCount ?? 0} 只</strong>
+                </div>
+                <p>{dataStatus.dailyBackfill.message}</p>
+                <em>最近：{dataStatus.dailyBackfill.lastRefresh}</em>
+              </div>
+            )}
             {dataStatus?.sourceCapabilities?.length > 0 && (
               <div className="data-capability-list">
                 {dataStatus.sourceCapabilities.slice(0, 4).map((source) => (
@@ -5366,9 +5420,14 @@ function WatchView({
               </div>
             )}
             {dataStatus?.lastRefresh && <em>最近刷新：{dataStatus.lastRefresh}</em>}
-            <button type="button" onClick={refreshMarketData} disabled={isRefreshingData}>
-              {isRefreshingData ? '刷新中...' : '刷新行情'}
-            </button>
+            <div className="data-action-row">
+              <button type="button" onClick={refreshMarketData} disabled={isRefreshingData}>
+                {isRefreshingData ? '刷新中...' : '刷新行情'}
+              </button>
+              <button type="button" onClick={runDailyBackfill} disabled={isRefreshingData}>
+                {isRefreshingData ? '补全中...' : '每日补全'}
+              </button>
+            </div>
           </section>
 
           <section className="automation-panel">

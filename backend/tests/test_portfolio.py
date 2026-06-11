@@ -403,11 +403,14 @@ class PortfolioFlowTest(unittest.TestCase):
 
         self.assertIn("dataStrategy", status)
         self.assertEqual(status["dataStrategy"]["mode"], "free-first")
+        self.assertTrue(status["dataStrategy"]["dailyBackfill"])
+        self.assertIn("dailyBackfillLimit", status["dataStrategy"])
         self.assertIn("sourceCapabilities", status)
         self.assertTrue(any(source["id"] == "free_fundamentals" for source in status["sourceCapabilities"]))
         self.assertIn("coverageSummary", status)
         self.assertIn("quote", status["coverageSummary"])
         self.assertIn("history", status["coverageSummary"])
+        self.assertIn("dailyBackfill", status)
 
     def test_portfolio_category_does_not_use_a_share_as_industry(self):
         unknown = self.backend.portfolio_category_label("A股", {"name": "测试股份", "tags": ["待同步"]})
@@ -734,6 +737,43 @@ class PortfolioFlowTest(unittest.TestCase):
         self.assertTrue(status["automation"]["enabled"])
         self.assertIn("tasks", status)
         self.assertTrue(any(task["taskId"] == "alert_check" for task in status["tasks"]))
+        self.assertTrue(any(task["taskId"] == "daily_data_backfill" for task in status["tasks"]))
+
+    def test_daily_backfill_records_user_focused_status(self):
+        originals = {
+            "refresh_stock_directory": self.backend.refresh_stock_directory,
+            "ensure_market_universe": self.backend.ensure_market_universe,
+            "sync_free_fundamentals": self.backend.sync_free_fundamentals,
+            "daily_backfill_target_codes": self.backend.daily_backfill_target_codes,
+            "backfill_one_stock": self.backend.backfill_one_stock,
+        }
+
+        try:
+            self.backend.refresh_stock_directory = lambda force=False: {"mode": "live", "count": 2}
+            self.backend.ensure_market_universe = lambda: {"mode": "live", "universeCount": 2}
+            self.backend.sync_free_fundamentals = lambda limit=None: {"mode": "live", "syncedCount": 2}
+            self.backend.daily_backfill_target_codes = lambda limit=None: ["000001"]
+            self.backend.backfill_one_stock = lambda code, force=False: {
+                "code": code,
+                "name": "平安银行",
+                "quote": True,
+                "history": True,
+                "fundamental": True,
+                "refreshed": {"quote": True, "history": True, "fundamental": True},
+                "quality": {"score": 90, "label": "数据充足"},
+                "errors": [],
+            }
+
+            status = self.backend.sync_daily_data_backfill(limit=1)
+            provider_status = self.backend.data_status_show()
+        finally:
+            for name, value in originals.items():
+                setattr(self.backend, name, value)
+
+        self.assertEqual(status["mode"], "live")
+        self.assertEqual(status["syncedCount"], 1)
+        self.assertEqual(status["coverage"]["history"]["ratio"], 100)
+        self.assertEqual(provider_status["dailyBackfill"]["syncedCount"], 1)
 
     def test_postgres_sql_translation_keeps_existing_queries_portable(self):
         ignore_sql = self.backend.translate_sql_for_postgres(

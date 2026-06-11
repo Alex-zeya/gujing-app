@@ -382,6 +382,8 @@ DIRECTORY_REFRESH_MINUTES = 24 * 60
 ALERT_CHECK_INTERVAL_MINUTES = 15
 QUOTE_CACHE_MINUTES = 3
 HISTORY_CACHE_MINUTES = 12 * 60
+DAILY_BACKFILL_MINUTES = 24 * 60
+DAILY_BACKFILL_LIMIT = int(os.getenv("DAILY_BACKFILL_LIMIT", "40"))
 HISTORY_FAILURE_RETRY_MINUTES = 30
 NEWS_CACHE_MINUTES = 60
 BACKGROUND_TASK_TICK_SECONDS = 30
@@ -393,6 +395,7 @@ BACKGROUND_TASKS = {
     "stock_directory": {"label": "A股股票目录同步", "intervalMinutes": DIRECTORY_REFRESH_MINUTES},
     "market_universe": {"label": "全市场行情同步", "intervalMinutes": MARKET_REFRESH_MINUTES},
     "free_fundamentals": {"label": "免费基本面补全", "intervalMinutes": DIRECTORY_REFRESH_MINUTES},
+    "daily_data_backfill": {"label": "每日数据补全", "intervalMinutes": DAILY_BACKFILL_MINUTES},
 }
 
 RATE_LIMIT_RULES = {
@@ -498,6 +501,11 @@ class WechatLoginPayload(BaseModel):
 
 class RefreshPayload(BaseModel):
     codes: list[str] | None = None
+
+
+class DailyBackfillPayload(BaseModel):
+    limit: int | None = Field(default=None, ge=1, le=200)
+    force: bool = False
 
 
 class TaskRunPayload(BaseModel):
@@ -2374,7 +2382,7 @@ def stock_source_trust(stock: dict[str, Any]) -> dict[str, Any]:
         score, label = source_reliability_label(item["source"])
         if not item["available"]:
             score = 15
-            label = "缺失"
+            label = "同步中"
         scored.append({**item, "score": score, "trustLabel": label})
     average = round(sum(item["score"] for item in scored) / len(scored))
     if average >= 78:
@@ -2424,7 +2432,7 @@ def stock_data_quality(stock: dict[str, Any]) -> dict[str, Any]:
     return {
         "score": score,
         "label": label,
-        "quote": "正常" if has_quote else "缺失",
+        "quote": "正常" if has_quote else "同步中",
         "history": "充足" if has_history else "不足",
         "fundamental": "可用" if has_fundamental else "公开数据较少",
         "historyRows": len(history_rows),
@@ -4167,6 +4175,8 @@ def run_background_task(task_id: str, source: str = "background") -> dict[str, A
             result = ensure_market_universe()
         elif task_id == "free_fundamentals":
             result = sync_free_fundamentals()
+        elif task_id == "daily_data_backfill":
+            result = sync_daily_data_backfill()
         else:
             raise RuntimeError(f"UNKNOWN_TASK:{task_id}")
 
@@ -5361,12 +5371,172 @@ def hydrate_stock_market_data(code: str, force_history: bool = False) -> dict[st
     stock["dataQuality"] = quality
     stock["dataCoverage"] = {
         **stock.get("dataCoverage", {}),
-        "quote": quality["quote"] != "缺失",
+        "quote": quality["quote"] == "正常",
         "history": quality["history"] == "充足",
         "fundamental": quality["fundamental"] != "公开数据较少",
     }
     upsert_stock(stock)
     return stock
+
+
+def recent_research_codes(limit: int = 30) -> list[str]:
+    with connect() as db:
+        rows = db.execute(
+            """
+            SELECT code
+            FROM recommendation_feedback
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (min(max(int(limit or 30), 1), 200),),
+        ).fetchall()
+    return [clean_code(row["code"]) for row in rows if clean_code(row["code"])]
+
+
+def daily_backfill_target_codes(limit: int | None = None) -> list[str]:
+    max_items = min(max(int(limit or DAILY_BACKFILL_LIMIT), 1), 200)
+    ordered: list[str] = []
+
+    def add_codes(codes: list[str]) -> None:
+        for code in codes:
+            clean = clean_code(code)
+            if clean and clean not in ordered:
+                ordered.append(clean)
+
+    add_codes(list_portfolio_codes())
+    add_codes(list_watchlist_codes())
+    add_codes(recent_research_codes(40))
+    add_codes([stock["code"] for stock in list_curated_stocks()])
+    add_codes(list(STOCKS.keys()))
+
+    stale_first: list[str] = []
+    fresh_later: list[str] = []
+    for code in ordered:
+        try:
+            stock = get_stock_or_404(code)
+        except HTTPException:
+            stock = ensure_stock_record(code)
+        quality = stock_data_quality(stock)
+        cache = stock.get("cache") or {}
+        needs_history = quality["history"] != "充足" or timestamp_is_stale(cache.get("historyRefreshedAt"), DAILY_BACKFILL_MINUTES)
+        needs_fundamental = quality["fundamental"] == "公开数据较少" or fundamental_cache_is_stale(stock, DAILY_BACKFILL_MINUTES)
+        needs_quote = quality["quote"] != "正常" or stock_cache_is_stale(stock, "quoteRefreshedAt", MARKET_REFRESH_MINUTES)
+        if needs_history or needs_fundamental or needs_quote:
+            stale_first.append(code)
+        else:
+            fresh_later.append(code)
+
+    return (stale_first + fresh_later)[:max_items]
+
+
+def backfill_one_stock(code: str, force: bool = False) -> dict[str, Any]:
+    clean = clean_code(code)
+    ensure_stock_record(clean)
+    errors: list[str] = []
+    quote_refreshed = False
+    history_refreshed = False
+    fundamental_refreshed = False
+
+    try:
+        quote_status = refresh_cached_quotes([clean], max_age_minutes=0 if force else MARKET_REFRESH_MINUTES)
+        quote_refreshed = bool(quote_status.get("refreshedCodes"))
+    except Exception as error:
+        errors.append(f"quote:{type(error).__name__}")
+
+    before_history_rows = len((get_stock_or_404(clean).get("klineRows") or []))
+    try:
+        stock = ensure_stock_history(clean, 0 if force else DAILY_BACKFILL_MINUTES)
+        history_refreshed = len(stock.get("klineRows") or []) >= max(20, before_history_rows)
+    except Exception as error:
+        errors.append(f"history:{type(error).__name__}")
+
+    try:
+        stock = get_stock_or_404(clean)
+        if get_tushare_token() and fundamental_cache_is_stale(stock, DAILY_BACKFILL_MINUTES):
+            refresh_tushare_daily_basic(clean)
+            fundamental_refreshed = True
+        elif quote_stats_need_extension(stock):
+            enriched = update_stock_with_eastmoney_quote_stats(stock, fetch_eastmoney_quote_stats(clean))
+            enriched = mark_stock_cache(enriched, "fundamentalRefreshedAt")
+            upsert_stock(enriched)
+            fundamental_refreshed = bool((enriched.get("quoteStats") or {}).get("marketCap"))
+    except Exception as error:
+        errors.append(f"fundamental:{type(error).__name__}")
+        mark_fundamental_refresh_error(clean, error)
+
+    stock = apply_analysis_score(apply_snapshot_history(get_stock_or_404(clean)))
+    stock["dataQuality"] = stock_data_quality(stock)
+    upsert_stock(stock)
+    return {
+        "code": clean,
+        "name": stock.get("name"),
+        "quote": bool(stock.get("dataCoverage", {}).get("quote")),
+        "history": bool(stock.get("dataCoverage", {}).get("history")),
+        "fundamental": bool(stock.get("dataCoverage", {}).get("fundamental")),
+        "refreshed": {
+            "quote": quote_refreshed,
+            "history": history_refreshed,
+            "fundamental": fundamental_refreshed,
+        },
+        "quality": stock["dataQuality"],
+        "errors": errors,
+    }
+
+
+def sync_daily_data_backfill(limit: int | None = None, force: bool = False) -> dict[str, Any]:
+    target_codes = daily_backfill_target_codes(limit)
+    refreshed: list[dict[str, Any]] = []
+    errors: list[str] = []
+    small_batch_limit = len(target_codes) if limit is not None else None
+
+    directory_status: dict[str, Any] | None = None
+    market_status: dict[str, Any] | None = None
+    fundamentals_status: dict[str, Any] | None = None
+    with suppress(Exception):
+        directory_status = refresh_stock_directory(force=False)
+    with suppress(Exception):
+        market_status = ensure_market_universe()
+    with suppress(Exception):
+        fundamentals_status = sync_free_fundamentals(limit=small_batch_limit)
+
+    for code in target_codes:
+        try:
+            refreshed.append(backfill_one_stock(code, force=force))
+        except Exception as error:
+            errors.append(f"{code}:{type(error).__name__}")
+
+    quote_ready = sum(1 for item in refreshed if item["quote"])
+    history_ready = sum(1 for item in refreshed if item["history"])
+    fundamental_ready = sum(1 for item in refreshed if item["fundamental"])
+    status = {
+        "mode": "live" if refreshed or market_status else "fallback",
+        "source": "daily-backfill",
+        "lastRefresh": now_text(),
+        "message": f"已完成每日数据补全，优先处理 {len(refreshed)} 只用户相关股票。",
+        "targetCount": len(target_codes),
+        "syncedCount": len(refreshed),
+        "coverage": {
+            "quote": {"count": quote_ready, "ratio": round(quote_ready / len(refreshed) * 100, 1) if refreshed else 0},
+            "history": {"count": history_ready, "ratio": round(history_ready / len(refreshed) * 100, 1) if refreshed else 0},
+            "fundamental": {"count": fundamental_ready, "ratio": round(fundamental_ready / len(refreshed) * 100, 1) if refreshed else 0},
+        },
+        "refreshedCodes": [item["code"] for item in refreshed],
+        "sample": refreshed[:8],
+        "directory": directory_status,
+        "market": market_status,
+        "freeFundamentals": fundamentals_status,
+        "errors": errors[:20],
+    }
+    with connect() as db:
+        db.execute(
+            """
+            INSERT INTO app_settings (key, payload)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET payload = excluded.payload
+            """,
+            ("daily_backfill_status", to_json(status)),
+        )
+    return status
 
 
 def build_kline(stock: dict[str, Any]) -> list[dict[str, float | str]]:
@@ -5971,6 +6141,7 @@ def data_status_show() -> dict[str, Any]:
         "dataStrategy": {
             "mode": "free-first",
             "dailyBackfill": True,
+            "dailyBackfillLimit": DAILY_BACKFILL_LIMIT,
             "missingPolicy": "保留最近一次有效缓存，不用空值覆盖。",
             "upgradePath": ["Tushare Pro", "EODHD", "交易所授权行情"],
         },
@@ -5981,6 +6152,7 @@ def data_status_show() -> dict[str, Any]:
         },
         "sourceCapabilities": data_source_capabilities(status, directory_status),
         "coverageSummary": coverage_summary,
+        "dailyBackfill": get_app_setting("daily_backfill_status", {}),
         "freeFundamentals": get_app_setting("free_fundamentals_status", {}),
         "providers": {
             "quote": ["easyquotation:tencent", "easyquotation:sina"],
@@ -6028,6 +6200,14 @@ def data_snapshot_create() -> dict[str, Any]:
 @app.post("/api/data/free-fundamentals/refresh")
 def data_free_fundamentals_refresh(limit: int | None = None) -> dict[str, Any]:
     return sync_free_fundamentals(limit=limit)
+
+
+@app.post("/api/data/backfill/daily")
+def data_daily_backfill(payload: DailyBackfillPayload | None = None) -> dict[str, Any]:
+    return sync_daily_data_backfill(
+        limit=payload.limit if payload else None,
+        force=bool(payload.force) if payload else False,
+    )
 
 
 @app.get("/api/tasks/status")

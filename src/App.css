@@ -5007,6 +5007,13 @@
   font-weight: 750;
 }
 
+.data-action-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, max-content));
+  gap: 8px;
+  align-items: center;
+}
+
 .data-status button {
   justify-self: start;
   min-height: 34px;
@@ -5049,6 +5056,42 @@
   color: var(--primary);
   font-size: 13px;
   font-weight: 930;
+}
+
+.daily-backfill-card {
+  display: grid;
+  gap: 6px;
+  border: 1px solid oklch(0.84 0.05 155);
+  border-radius: 11px;
+  padding: 10px;
+  background: oklch(0.972 0.027 155);
+}
+
+.daily-backfill-card > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.daily-backfill-card span {
+  color: oklch(0.34 0.09 155);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.daily-backfill-card strong {
+  color: oklch(0.33 0.11 155);
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.daily-backfill-card p {
+  color: oklch(0.37 0.052 155);
+}
+
+.daily-backfill-card em {
+  color: oklch(0.38 0.08 155);
 }
 
 .data-capability-list {
