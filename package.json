@@ -7,6 +7,7 @@
     "backend": "backend/.venv/bin/python -m uvicorn main:app --reload --reload-exclude 'backend/.venv/*' --host 0.0.0.0 --port 8010 --app-dir backend",
     "backend:test": "backend/.venv/bin/python -m unittest discover -s backend/tests",
     "dev": "vite",
+    "test:e2e": "playwright test",
     "build": "vite build",
     "build:ios": "vite build --mode ios",
     "lint": "eslint .",
@@ -27,6 +28,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.60.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",

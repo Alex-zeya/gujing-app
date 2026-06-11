@@ -712,6 +712,31 @@ class PortfolioFlowTest(unittest.TestCase):
         self.assertEqual(readiness["mode"], "sqlite")
         self.assertGreater(readiness["stockCount"], 0)
 
+    def test_dev_sms_code_ignores_expired_previous_code(self):
+        self.backend.SMS_PROVIDER = "mock"
+        phone = "15995270070"
+        with self.backend.connect() as db:
+            db.execute(
+                """
+                INSERT INTO auth_sms_codes (phone, code, expires_at, created_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(phone) DO UPDATE SET
+                  code = excluded.code,
+                  expires_at = excluded.expires_at,
+                  created_at = CURRENT_TIMESTAMP
+                """,
+                (phone, "654321", "2000-01-01 00:00:00"),
+            )
+
+        payload = self.backend.auth_sms_login(
+            self.backend.PhoneLoginPayload(phone=phone, code="123456"),
+            user_agent=None,
+            x_device_name=None,
+        )
+
+        self.assertTrue(payload["authenticated"])
+        self.assertIn("token", payload)
+
 
 if __name__ == "__main__":
     unittest.main()

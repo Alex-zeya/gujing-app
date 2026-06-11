@@ -53,10 +53,11 @@
 本文件会在每次发布前更新。本次执行结果：
 
 - `plutil -lint ios/App/App/Info.plist ios/App/App/PrivacyInfo.xcprivacy`：通过
-- `npm run backend:test`：通过，29 个测试
+- `npm run backend:test`：通过，30 个测试
 - `npm run lint`：通过
 - `npm run build`：通过
 - `npm run ios:sync`：通过
+- `npm run test:e2e`：通过，覆盖登录、中文搜索、加入持仓、持仓页、观察池、我的页和隐私政策页
 - API 冒烟：通过，覆盖健康检查、短信登录、中文搜索、股票详情、K 线、观察池、持仓买入/卖出、用户数据导出
 - 前端服务冒烟：通过，首页和隐私政策页均可访问
 
@@ -66,7 +67,12 @@
 npm run backend:test
 npm run lint
 npm run build
+npm run test:e2e
 npm run ios:sync
 ```
 
-如果要做完整点击自动化测试，需要在项目里加入 Playwright 或在测试机安装 Python Playwright。当前环境未安装 Python `playwright` 模块，因此本次用 API 冒烟和前端服务冒烟替代。
+项目已接入 Playwright 点击式测试。首次在新机器运行前执行：
+
+```bash
+npx playwright install chromium
+```

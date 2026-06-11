@@ -6226,7 +6226,7 @@ def auth_sms_login(
     is_dev_code = (SMS_PROVIDER == "mock" or os.getenv("APP_ENV") != "production") and payload.code == "123456"
     if not row and not is_dev_code:
         raise HTTPException(status_code=401, detail="code not found")
-    if row and parse_refresh_time(row["expires_at"]) and datetime.now() > parse_refresh_time(row["expires_at"]):
+    if row and parse_refresh_time(row["expires_at"]) and datetime.now() > parse_refresh_time(row["expires_at"]) and not is_dev_code:
         raise HTTPException(status_code=401, detail="code expired")
     if row and payload.code != row["code"] and not is_dev_code:
         raise HTTPException(status_code=401, detail="invalid code")
