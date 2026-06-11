@@ -3110,6 +3110,10 @@ function StockStatsGrid({ stock, candles = null }) {
 
 function KLineView({ stock, setActiveTab, returnTab, candles }) {
   const displayCandles = candles?.length ? candles : stock.klineRows?.length ? stock.klineRows : buildKLineData(stock)
+  const dataQuality = stock.dataQuality ?? stock.analysisScore?.dataQuality
+  const sourceTrust = stock.sourceTrust ?? dataQuality?.sourceTrust
+  const quoteSource = stock.quoteStats?.source ?? stock.quote?.source ?? '待同步'
+  const klineSource = stock.klineSource ?? stock.historyProvider ?? (stock.dataCoverage?.history ? '历史K线' : '待补充')
   return (
     <div className="view-stack kline-view">
       <button className="back-button" type="button" onClick={() => setActiveTab(returnTab)}>
@@ -3140,7 +3144,28 @@ function KLineView({ stock, setActiveTab, returnTab, candles }) {
         <KLineChart stock={stock} candles={displayCandles} />
         <TechnicalLevels candles={displayCandles} />
         <StockStatsGrid stock={stock} candles={displayCandles} />
-        <p>关键数据来自实时行情和已接入日K，市值等字段会随行情源可用性补充。</p>
+        <div className="data-source-strip">
+          <div>
+            <span>实时行情</span>
+            <strong>{quoteSource}</strong>
+          </div>
+          <div>
+            <span>K线来源</span>
+            <strong>{klineSource}</strong>
+          </div>
+          <div>
+            <span>K线数量</span>
+            <strong>{displayCandles.length} 根</strong>
+          </div>
+          <div>
+            <span>数据质量</span>
+            <strong>{dataQuality?.label ?? sourceTrust?.label ?? '检查中'}</strong>
+          </div>
+        </div>
+        <p>
+          当前页会优先显示实时/准实时价格，再结合日K、成交量、市值和数据质量生成分析。
+          免费公开行情源可能有延迟，关键交易前仍需要自行核验。
+        </p>
       </section>
     </div>
   )

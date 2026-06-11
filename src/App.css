@@ -1685,6 +1685,38 @@
   line-height: 1.45;
 }
 
+.data-source-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.data-source-strip div {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 10px;
+  background: color-mix(in oklch, var(--primary-soft), white 52%);
+}
+
+.data-source-strip span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.data-source-strip strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 5px;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .stock-stats-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -338,6 +338,7 @@ DIRECTORY_REFRESH_MINUTES = 24 * 60
 ALERT_CHECK_INTERVAL_MINUTES = 15
 QUOTE_CACHE_MINUTES = 3
 HISTORY_CACHE_MINUTES = 12 * 60
+HISTORY_FAILURE_RETRY_MINUTES = 30
 NEWS_CACHE_MINUTES = 60
 BACKGROUND_TASK_TICK_SECONDS = 30
 BACKGROUND_TASKS = {
@@ -910,6 +911,22 @@ def get_stock_or_404(code: str) -> dict[str, Any]:
     return from_json(row["payload"])
 
 
+def ensure_stock_record(code: str) -> dict[str, Any]:
+    clean = clean_code(code)
+    try:
+        return get_stock_or_404(clean)
+    except HTTPException:
+        rows = stock_directory_rows(clean, limit=3)
+        match = next((row for row in rows if row["code"] == clean), None)
+        stock = build_stock_from_directory(
+            clean,
+            match["name"] if match else clean,
+            match["industry"] if match else "A股",
+        )
+        upsert_stock(stock)
+        return stock
+
+
 def list_stocks() -> list[dict[str, Any]]:
     with connect() as db:
         rows = db.execute("SELECT payload FROM stocks ORDER BY code").fetchall()
@@ -1412,7 +1429,7 @@ def apply_snapshot_history(stock: dict[str, Any]) -> dict[str, Any]:
             "volume": row["volume"],
             "amount": row["amount"],
         }
-        for row in ten
+        for row in rows[-80:]
     ]
     stock["updated"] = f"快照 {last['trade_date']}"
     stock["dataCoverage"] = {
@@ -1784,7 +1801,7 @@ def record_recommendation_feedback(
     user_id: str | None = None,
 ) -> dict[str, Any]:
     clean = clean_code(code)
-    stock = get_stock_or_404(clean)
+    stock = ensure_stock_record(clean)
     normalized_action = action.strip().lower()
     allowed_actions = {"view", "analyze", "watch", "dismiss", "portfolio"}
     if normalized_action not in allowed_actions:
@@ -2033,13 +2050,15 @@ def stock_data_quality(stock: dict[str, Any]) -> dict[str, Any]:
     stats = stock.get("quoteStats") or {}
     history_rows = stock.get("klineRows") or []
     has_quote = bool(coverage.get("quote")) and stock_price_number(stock) > 0
-    has_history = bool(coverage.get("history")) or len(history_rows) >= 20
+    has_history = len(history_rows) >= 20
     has_fundamental = bool(coverage.get("fundamental")) or bool(stats.get("marketCap") or stock.get("marketCap"))
     quote_score = 35 if has_quote else 8
     history_score = 35 if has_history else 8 + min(12, len(history_rows))
     fundamental_score = 20 if has_fundamental else 6
     freshness_score = 10
     score = clamp_score(quote_score + history_score + fundamental_score + freshness_score)
+    if not has_history:
+        score = min(score, 68)
     if score >= 80:
         label = "数据充足"
     elif score >= 60:
@@ -3521,23 +3540,60 @@ def search_stocks(keyword: str) -> list[dict[str, Any]]:
 def update_stock_with_hist(stock: dict[str, Any], hist_df: Any) -> dict[str, Any]:
     if hist_df is None or hist_df.empty:
         return stock
-    recent = hist_df.tail(10)
-    closes = [float(value) for value in recent["收盘"].tolist()]
+    rows = hist_df.tail(80)
+    ten = rows.tail(10)
+    closes = [float(value) for value in rows["收盘"].tolist()]
     if not closes:
         return stock
-    spark_min = min(closes)
-    spark_range = max(closes) - spark_min or 1
-    sparkline = [round(40 + ((item - spark_min) / spark_range) * 22, 2) for item in closes]
+    ten_closes = [float(value) for value in ten["收盘"].tolist()]
+    spark_min = min(ten_closes)
+    spark_range = max(ten_closes) - spark_min or 1
+    sparkline = [round(40 + ((item - spark_min) / spark_range) * 22, 2) for item in ten_closes]
+    last_row = rows.iloc[-1]
     stock = {**stock}
-    stock["chart"] = [round(item, 2) for item in closes]
+    stock["price"] = price_to_text(value_from_row(last_row, ["收盘"], stock.get("price")))
+    pct_chg = value_from_row(last_row, ["涨跌幅"], stock.get("performance", {}).get("day", 0))
+    stock["change"] = format_change(pct_chg)
+    stock["chart"] = [round(item, 2) for item in ten_closes]
     stock["sparkline"] = sparkline
     if len(closes) >= 5:
         week = (closes[-1] - closes[-5]) / closes[-5] * 100
         stock["performance"] = {**stock["performance"], "week": round(week, 2)}
     if len(closes) >= 10:
-        month = (closes[-1] - closes[0]) / closes[0] * 100
+        month_base = closes[-20] if len(closes) >= 20 else closes[0]
+        month = (closes[-1] - month_base) / month_base * 100
         stock["performance"] = {**stock["performance"], "month": round(month, 2)}
-    stock["dataCoverage"] = {**stock.get("dataCoverage", {}), "history": True}
+    stock["performance"] = {**stock.get("performance", {}), "day": round(float(pct_chg or 0), 2)}
+    stock["dataCoverage"] = {**stock.get("dataCoverage", {}), "quote": True, "history": len(rows) >= 40, "historySource": "akshare"}
+    stock["klineRows"] = [
+        {
+            "date": str(value_from_row(row, ["日期"], index)).replace("-", ""),
+            "open": round(float(value_from_row(row, ["开盘"], 0) or 0), 2),
+            "close": round(float(value_from_row(row, ["收盘"], 0) or 0), 2),
+            "high": round(float(value_from_row(row, ["最高"], 0) or 0), 2),
+            "low": round(float(value_from_row(row, ["最低"], 0) or 0), 2),
+            "volume": number_or_none(value_from_row(row, ["成交量"], 0)) or 0,
+            "amount": number_or_none(value_from_row(row, ["成交额"], 0)) or 0,
+            "pctChg": round(float(value_from_row(row, ["涨跌幅"], 0) or 0), 2),
+        }
+        for index, row in rows.iterrows()
+    ]
+    stock["quoteStats"] = {
+        **stock.get("quoteStats", {}),
+        "open": number_or_none(value_from_row(last_row, ["开盘"])),
+        "previousClose": round(float(value_from_row(last_row, ["收盘"], 0) or 0) - float(value_from_row(last_row, ["涨跌额"], 0) or 0), 2),
+        "dayHigh": number_or_none(value_from_row(last_row, ["最高"])),
+        "dayLow": number_or_none(value_from_row(last_row, ["最低"])),
+        "historyHigh": round(max(float(value) for value in rows["最高"].tolist()), 2),
+        "historyLow": round(min(float(value) for value in rows["最低"].tolist()), 2),
+        "volume": compact_volume(value_from_row(last_row, ["成交量"])),
+        "amount": compact_yuan(value_from_row(last_row, ["成交额"])),
+        "period": f"近{len(rows)}个交易日",
+        "source": "AkShare",
+    }
+    stock["historyProvider"] = "AkShare"
+    stock["klineSource"] = "AkShare stock_zh_a_hist"
+    stock["updated"] = f"日K {stock['klineRows'][-1]['date']}"
     return stock
 
 
@@ -3604,7 +3660,7 @@ def refresh_tushare_history(code: str) -> dict[str, Any]:
         for row in ten
     ]
     stock["updated"] = f"日K {last_row['trade_date']}"
-    stock["dataCoverage"] = {**stock.get("dataCoverage", {}), "quote": True, "history": True}
+    stock["dataCoverage"] = {**stock.get("dataCoverage", {}), "quote": True, "history": True, "historySource": "tushare"}
     stock["klineRows"] = [
         {
             "date": row["trade_date"],
@@ -3616,16 +3672,31 @@ def refresh_tushare_history(code: str) -> dict[str, Any]:
             "amount": float(row["amount"]),
             "pctChg": round(float(row["pct_chg"]), 2),
         }
-        for row in ten
+        for row in recent
     ]
+    stock["historyProvider"] = "Tushare"
+    stock["klineSource"] = "Tushare daily"
     stock["pulse"] = f"已补充历史日K，近一月走势 {format_change(stock['performance']['month'])}。"
+    upsert_stock(stock)
+    return stock
+
+
+def refresh_akshare_history(code: str) -> dict[str, Any]:
+    clean = clean_code(code)
+    stock = ensure_stock_record(clean)
+    import akshare as ak
+
+    hist_df = ak.stock_zh_a_hist(symbol=clean, period="daily", adjust="qfq")
+    stock = update_stock_with_hist(stock, hist_df)
+    stock["historyProvider"] = "AkShare"
+    stock["klineSource"] = "AkShare stock_zh_a_hist"
     upsert_stock(stock)
     return stock
 
 
 def refresh_eastmoney_history(code: str) -> dict[str, Any]:
     clean = clean_code(code)
-    stock = get_stock_or_404(clean)
+    stock = ensure_stock_record(clean)
     params = {
         "secid": eastmoney_secid(clean),
         "fields1": "f1,f2,f3,f4,f5,f6",
@@ -3640,19 +3711,19 @@ def refresh_eastmoney_history(code: str) -> dict[str, Any]:
         "Referer": "https://quote.eastmoney.com/",
     }
     last_error: Exception | None = None
-    for attempt in range(3):
+    for attempt in range(2):
         try:
             response = requests.get(
                 "https://push2his.eastmoney.com/api/qt/stock/kline/get",
                 params=params,
                 headers=headers,
-                timeout=20,
+                timeout=8,
             )
             response.raise_for_status()
             break
         except Exception as error:
             last_error = error
-            if attempt < 2:
+            if attempt < 1:
                 time.sleep(0.8 * (attempt + 1))
     else:
         raise RuntimeError(f"EASTMONEY_REQUEST_FAILED:{last_error}") from last_error
@@ -3747,6 +3818,8 @@ def refresh_eastmoney_history(code: str) -> dict[str, Any]:
     except Exception:
         pass
     stock["quoteStats"] = quote_stats
+    stock["historyProvider"] = "东方财富"
+    stock["klineSource"] = "东方财富日K"
     stock["metrics"] = [
         ["当前价", price_to_text(last_row["close"]), "日K"],
         ["成交额", f"{round(last_row['amount'] / 100000000, 2)}亿", "跟踪"],
@@ -3920,20 +3993,58 @@ def refresh_cached_quotes(
 
 
 def ensure_stock_history(code: str, max_age_minutes: int = HISTORY_CACHE_MINUTES) -> dict[str, Any]:
-    stock = apply_snapshot_history(get_stock_or_404(code))
-    has_history = bool(stock.get("klineRows"))
+    stock = apply_snapshot_history(ensure_stock_record(code))
+    has_history = len(stock.get("klineRows") or []) >= 40
     if has_history and not stock_cache_is_stale(stock, "historyRefreshedAt", max_age_minutes):
+        return apply_analysis_score(stock)
+    if stock.get("historyProviderErrors") and not stock_cache_is_stale(stock, "historyFailedAt", HISTORY_FAILURE_RETRY_MINUTES):
         return apply_analysis_score(stock)
     try:
         stock = refresh_eastmoney_history(code)
         stock = mark_stock_cache(stock, "historyRefreshedAt")
+        stock.get("cache", {}).pop("historyFailedAt", None)
         stock = apply_analysis_score(stock)
         upsert_stock(stock)
         return stock
-    except Exception:
+    except Exception as eastmoney_error:
+        try:
+            stock = refresh_akshare_history(code)
+            stock = mark_stock_cache(stock, "historyRefreshedAt")
+            stock.get("cache", {}).pop("historyFailedAt", None)
+            stock["historyProviderErrors"] = [f"eastmoney:{type(eastmoney_error).__name__}"]
+            stock = apply_analysis_score(stock)
+            upsert_stock(stock)
+            return stock
+        except Exception as akshare_error:
+            stock["historyProviderErrors"] = [
+                f"eastmoney:{type(eastmoney_error).__name__}",
+                f"akshare:{type(akshare_error).__name__}",
+            ]
+            stock = mark_stock_cache(stock, "historyFailedAt")
         stock = apply_analysis_score(stock)
         upsert_stock(stock)
         return stock
+
+
+def hydrate_stock_market_data(code: str, force_history: bool = False) -> dict[str, Any]:
+    clean = clean_code(code)
+    ensure_stock_record(clean)
+    with suppress(Exception):
+        refresh_cached_quotes([clean])
+    stock = ensure_stock_history(clean, 0 if force_history else HISTORY_CACHE_MINUTES)
+    with suppress(Exception):
+        refresh_cached_quotes([clean])
+    stock = apply_analysis_score(apply_snapshot_history(get_stock_or_404(clean)))
+    quality = stock_data_quality(stock)
+    stock["dataQuality"] = quality
+    stock["dataCoverage"] = {
+        **stock.get("dataCoverage", {}),
+        "quote": quality["quote"] != "缺失",
+        "history": quality["history"] == "充足",
+        "fundamental": quality["fundamental"] != "待补充",
+    }
+    upsert_stock(stock)
+    return stock
 
 
 def build_kline(stock: dict[str, Any]) -> list[dict[str, float | str]]:
@@ -4687,10 +4798,7 @@ def stocks_search(keyword: str = "", full: bool = False, with_quotes: bool = Fal
 
 @app.get("/api/stocks/{code}")
 def stocks_show(code: str) -> dict[str, Any]:
-    refresh_cached_quotes([code])
-    stock = apply_analysis_score(apply_snapshot_history(get_stock_or_404(code)))
-    upsert_stock(stock)
-    return stock
+    return hydrate_stock_market_data(code)
 
 
 @app.post("/api/stocks/{code}/history/refresh")
@@ -4698,6 +4806,9 @@ def stocks_history_refresh(code: str) -> dict[str, Any]:
     errors: list[str] = []
     try:
         stock = apply_analysis_score(refresh_tushare_history(code))
+        with suppress(Exception):
+            refresh_cached_quotes([code])
+            stock = apply_analysis_score(get_stock_or_404(code))
         upsert_stock(stock)
         return stock
     except Exception as error:
@@ -4705,13 +4816,27 @@ def stocks_history_refresh(code: str) -> dict[str, Any]:
 
     try:
         stock = apply_analysis_score(refresh_eastmoney_history(code))
+        with suppress(Exception):
+            refresh_cached_quotes([code])
+            stock = apply_analysis_score(get_stock_or_404(code))
         if errors:
             stock["historyProviderErrors"] = errors
         upsert_stock(stock)
         return stock
     except Exception as error:
         errors.append(f"eastmoney:{error}")
-        stock = get_stock_or_404(code)
+
+    try:
+        stock = apply_analysis_score(refresh_akshare_history(code))
+        with suppress(Exception):
+            refresh_cached_quotes([code])
+            stock = apply_analysis_score(get_stock_or_404(code))
+        stock["historyProviderErrors"] = errors
+        upsert_stock(stock)
+        return stock
+    except Exception as error:
+        errors.append(f"akshare:{error}")
+        stock = ensure_stock_record(code)
         stock["dataCoverage"] = {**stock.get("dataCoverage", {}), "history": False}
         stock["historyProviderErrors"] = errors
         upsert_stock(stock)
@@ -4720,22 +4845,15 @@ def stocks_history_refresh(code: str) -> dict[str, Any]:
 
 @app.get("/api/stocks/{code}/kline")
 def stocks_kline(code: str) -> dict[str, Any]:
-    refresh_cached_quotes([code])
-    stock = ensure_stock_history(code)
-    if not stock.get("quoteStats", {}).get("marketCap"):
-        try:
-            stock = refresh_eastmoney_history(code)
-            stock = mark_stock_cache(stock, "historyRefreshedAt")
-        except Exception:
-            pass
-    stock = apply_analysis_score(stock)
-    upsert_stock(stock)
+    stock = hydrate_stock_market_data(code)
     return {
         "code": stock["code"],
         "name": stock["name"],
         "candles": stock.get("klineRows") or build_kline(stock),
         "coverage": stock.get("dataCoverage", {}),
         "quoteStats": stock.get("quoteStats", {}),
+        "dataQuality": stock.get("dataQuality") or stock_data_quality(stock),
+        "sourceTrust": stock.get("sourceTrust") or stock_source_trust(stock),
         "stock": stock,
     }
 
