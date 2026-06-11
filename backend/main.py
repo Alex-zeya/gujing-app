@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 DB_PATH = Path(os.getenv("GUJING_DB_PATH", Path(__file__).with_name("gujing.db")))
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 USING_POSTGRES = DATABASE_URL.startswith(("postgres://", "postgresql://"))
+APP_STARTED_AT = time.time()
 DEFAULT_USER_ID = "default_user"
 DEFAULT_USER_PROFILE = {
     "id": DEFAULT_USER_ID,
@@ -5752,6 +5753,11 @@ def system_readiness_index() -> dict[str, Any]:
     return system_readiness_payload()
 
 
+@app.get("/api/system/monitor")
+def system_monitor_index() -> dict[str, Any]:
+    return system_monitor_payload()
+
+
 @app.get("/api/system/errors")
 def system_errors_index(limit: int = 20) -> dict[str, Any]:
     return {"items": recent_error_audit(limit=limit)}
@@ -6502,6 +6508,100 @@ def system_readiness_payload() -> dict[str, Any]:
         "status": status,
         "updatedAt": now_text(),
         "checks": checks,
+    }
+
+
+def minutes_since(value: str | None) -> int | None:
+    parsed = parse_refresh_time(value)
+    if not parsed:
+        return None
+    return max(0, round((datetime.now() - parsed).total_seconds() / 60))
+
+
+def system_monitor_payload() -> dict[str, Any]:
+    readiness = system_readiness_payload()
+    data_status = get_data_status()
+    data_report = data_status_show()
+    task_report = list_task_statuses()
+    tasks = task_report["tasks"]
+    errors = recent_error_audit(limit=20)
+    recent_error_count = len(errors)
+    task_failures = sum(int((task.get("health") or {}).get("consecutiveFailures") or 0) for task in tasks)
+    data_age_minutes = minutes_since(data_status.get("lastRefresh"))
+    quote_ratio = int(((data_report.get("coverageSummary") or {}).get("quote") or {}).get("ratio") or 0)
+    history_ratio = int(((data_report.get("coverageSummary") or {}).get("history") or {}).get("ratio") or 0)
+    score = 100
+    if not (readiness.get("checks", {}).get("database") or {}).get("ok"):
+        score -= 35
+    if data_status.get("mode") not in {"live", "fallback"}:
+        score -= 20
+    if data_age_minutes is None:
+        score -= 12
+    elif data_age_minutes > MARKET_REFRESH_MINUTES * 3:
+        score -= 12
+    elif data_age_minutes > MARKET_REFRESH_MINUTES * 2:
+        score -= 6
+    if quote_ratio < 70:
+        score -= 12
+    if history_ratio < 40:
+        score -= 8
+    if task_failures:
+        score -= min(20, task_failures * 4)
+    if recent_error_count:
+        score -= min(18, recent_error_count * 3)
+    score = max(0, min(100, score))
+    status = "healthy" if score >= 85 else "degraded" if score >= 65 else "attention"
+    action_items: list[str] = []
+    if data_age_minutes is None or data_age_minutes > MARKET_REFRESH_MINUTES * 2:
+        action_items.append("行情刷新偏慢，优先执行一次数据刷新或检查免费行情源。")
+    if task_failures:
+        action_items.append("后台任务存在连续失败，查看任务错误并手动重跑。")
+    if recent_error_count:
+        action_items.append("最近有接口错误，先查看错误日志中出现频率最高的路径。")
+    if not readiness["checks"]["sms"]["ok"]:
+        action_items.append("正式上线前需要配置真实短信服务商。")
+    if not readiness["checks"]["tushare"]["ok"]:
+        action_items.append("历史 K 线可继续用免费源，生产稳定性建议准备授权数据源。")
+    if not action_items:
+        action_items.append("核心服务正常，继续关注行情覆盖率和任务运行记录。")
+    return {
+        "status": status,
+        "score": score,
+        "updatedAt": now_text(),
+        "environment": {
+            "appEnv": os.getenv("APP_ENV", "development"),
+            "database": "postgres" if USING_POSTGRES else "sqlite",
+            "uptimeSeconds": round(time.time() - APP_STARTED_AT),
+            "corsOrigins": CORS_ORIGINS,
+        },
+        "signals": {
+            "api": {"ok": True, "label": "API 可访问"},
+            "database": readiness["checks"]["database"],
+            "data": {
+                "ok": data_status.get("mode") in {"live", "fallback"},
+                "mode": data_status.get("mode"),
+                "source": data_status.get("source"),
+                "ageMinutes": data_age_minutes,
+                "quoteCoverage": quote_ratio,
+                "historyCoverage": history_ratio,
+            },
+            "tasks": {
+                "ok": task_failures == 0,
+                "count": len(tasks),
+                "consecutiveFailures": task_failures,
+                "items": tasks,
+            },
+            "errors": {
+                "ok": recent_error_count == 0,
+                "recentCount": recent_error_count,
+                "items": errors[:5],
+            },
+            "auth": {
+                "sms": readiness["checks"]["sms"],
+                "wechat": readiness["checks"]["wechat"],
+            },
+        },
+        "actionItems": action_items[:4],
     }
 
 

@@ -712,6 +712,19 @@ class PortfolioFlowTest(unittest.TestCase):
         self.assertEqual(readiness["mode"], "sqlite")
         self.assertGreater(readiness["stockCount"], 0)
 
+    def test_system_monitor_reports_operational_signals(self):
+        monitor = self.backend.system_monitor_payload()
+
+        self.assertIn(monitor["status"], {"healthy", "degraded", "attention"})
+        self.assertGreaterEqual(monitor["score"], 0)
+        self.assertLessEqual(monitor["score"], 100)
+        self.assertIn("environment", monitor)
+        self.assertIn("signals", monitor)
+        self.assertIn("database", monitor["signals"])
+        self.assertIn("data", monitor["signals"])
+        self.assertIn("tasks", monitor["signals"])
+        self.assertTrue(monitor["actionItems"])
+
     def test_dev_sms_code_ignores_expired_previous_code(self):
         self.backend.SMS_PROVIDER = "mock"
         phone = "15995270070"

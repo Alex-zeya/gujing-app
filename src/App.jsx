@@ -529,6 +529,18 @@ function formatPercent(value) {
   return `${sign}${value.toFixed(2)}%`
 }
 
+function formatDuration(seconds) {
+  const value = Number(seconds)
+  if (!Number.isFinite(value) || value <= 0) return '刚启动'
+  const minutes = Math.floor(value / 60)
+  if (minutes < 1) return `${Math.floor(value)} 秒`
+  if (minutes < 60) return `${minutes} 分钟`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} 小时 ${minutes % 60} 分钟`
+  const days = Math.floor(hours / 24)
+  return `${days} 天 ${hours % 24} 小时`
+}
+
 function stockPriceNumber(stock) {
   const value = Number(String(stock?.price ?? '').replace(/,/g, ''))
   return Number.isFinite(value) ? value : 0
@@ -863,6 +875,7 @@ function App() {
   const [dataStatus, setDataStatus] = useState(null)
   const [taskStatus, setTaskStatus] = useState(null)
   const [systemStatus, setSystemStatus] = useState(null)
+  const [systemMonitor, setSystemMonitor] = useState(null)
   const [isRefreshingData, setIsRefreshingData] = useState(false)
   const [pullDistance, setPullDistance] = useState(0)
   const pullStartYRef = useRef(null)
@@ -965,7 +978,7 @@ function App() {
           if (authData.token) localStorage.setItem(AUTH_TOKEN_KEY, authData.token)
         }
 
-        const [stockList, overview, recommendations, watchItems, portfolioSnapshot, insights, alertSettings, alertFeed, providerStatus, taskData, userData, readiness] = await Promise.all([
+        const [stockList, overview, recommendations, watchItems, portfolioSnapshot, insights, alertSettings, alertFeed, providerStatus, taskData, userData, readiness, monitor] = await Promise.all([
           apiJson('/api/stocks'),
           apiJson('/api/market/overview'),
           apiJson('/api/recommendations/today'),
@@ -978,6 +991,7 @@ function App() {
           apiJson('/api/tasks/status'),
           apiJson('/api/user/summary'),
           apiJson('/api/system/readiness'),
+          apiJson('/api/system/monitor'),
         ])
 
         if (!isMounted) return
@@ -1001,6 +1015,7 @@ function App() {
         setTaskStatus(taskData)
         setUserSummary(userData)
         setSystemStatus(readiness)
+        setSystemMonitor(monitor)
         setAuthSession(authData)
         setApiStatus('connected')
       } catch {
@@ -1025,13 +1040,14 @@ function App() {
 
     async function refreshMarketModules() {
       try {
-        const [overview, recommendations, alertFeed, providerStatus, taskData, readiness] = await Promise.all([
+        const [overview, recommendations, alertFeed, providerStatus, taskData, readiness, monitor] = await Promise.all([
           apiJson('/api/market/overview'),
           apiJson('/api/recommendations/today'),
           apiJson('/api/alerts/events'),
           apiJson('/api/data/status'),
           apiJson('/api/tasks/status'),
           apiJson('/api/system/readiness'),
+          apiJson('/api/system/monitor'),
         ])
         setMarketOverview(overview)
         setRecommendedStocks(recommendations)
@@ -1042,6 +1058,7 @@ function App() {
         setDataStatus(providerStatus)
         setTaskStatus(taskData)
         setSystemStatus(readiness)
+        setSystemMonitor(monitor)
         setApiStatus('connected')
       } catch {
         setApiStatus('offline')
@@ -1656,7 +1673,7 @@ function App() {
     localStorage.setItem(AUTH_TOKEN_KEY, result.token)
     setAuthSession(result)
     setAuthNotice('登录成功')
-    const [watchItems, portfolioSnapshot, insights, alertSettings, alertFeed, taskData, userData, readiness] = await Promise.all([
+    const [watchItems, portfolioSnapshot, insights, alertSettings, alertFeed, taskData, userData, readiness, monitor] = await Promise.all([
       apiJson('/api/watchlist'),
       apiJson('/api/portfolio'),
       apiJson('/api/portfolio/insights'),
@@ -1665,6 +1682,7 @@ function App() {
       apiJson('/api/tasks/status'),
       apiJson('/api/user/summary'),
       apiJson('/api/system/readiness'),
+      apiJson('/api/system/monitor'),
     ])
     setWatchlist(watchItems.map((stock) => stock.code))
     setPortfolio(portfolioSnapshotToItems(portfolioSnapshot))
@@ -1676,6 +1694,7 @@ function App() {
     setTaskStatus(taskData)
     setUserSummary(userData)
     setSystemStatus(readiness)
+    setSystemMonitor(monitor)
     setApiStatus('connected')
     return result
   }
@@ -1729,7 +1748,7 @@ function App() {
         method: 'POST',
         body: JSON.stringify({ codes: marketStocks.map((stock) => stock.code) }),
       })
-      const [stockList, overview, recommendations, portfolioSnapshot, insights, alertFeed, providerStatus, taskData, userData, readiness] = await Promise.all([
+      const [stockList, overview, recommendations, portfolioSnapshot, insights, alertFeed, providerStatus, taskData, userData, readiness, monitor] = await Promise.all([
         apiJson('/api/stocks'),
         apiJson('/api/market/overview'),
         apiJson('/api/recommendations/today'),
@@ -1740,6 +1759,7 @@ function App() {
         apiJson('/api/tasks/status'),
         apiJson('/api/user/summary'),
         apiJson('/api/system/readiness'),
+        apiJson('/api/system/monitor'),
       ])
       setStockCatalog((current) => mergeStockCatalog(
         {
@@ -1758,6 +1778,7 @@ function App() {
       setTaskStatus(taskData)
       setUserSummary(userData)
       setSystemStatus(readiness)
+      setSystemMonitor(monitor)
       setDataStatus(providerStatus)
       setApiStatus('connected')
     } catch {
@@ -1964,6 +1985,7 @@ function App() {
             apiStatus={apiStatus}
             dataStatus={dataStatus}
             systemStatus={systemStatus}
+            systemMonitor={systemMonitor}
             isSavingUserProfile={isSavingUserProfile}
             saveUserProfile={saveUserProfile}
             authSession={authSession}
@@ -4137,6 +4159,7 @@ function ProfileView({
   apiStatus,
   dataStatus,
   systemStatus,
+  systemMonitor,
   isSavingUserProfile,
   saveUserProfile,
   authSession,
@@ -4275,43 +4298,8 @@ function ProfileView({
         </div>
       </section>
 
-      {systemStatus && (
-        <section className="panel profile-panel">
-          <div className="section-title split">
-            <div>
-              <ShieldAlert size={18} />
-              <h2>系统配置检查</h2>
-            </div>
-            <span>{systemStatus.status === 'ready' ? '已就绪' : systemStatus.status === 'needs_config' ? '待配置' : '需处理'}</span>
-          </div>
-          <div className="system-check-grid">
-            {[
-              ['数据库', systemStatus.checks?.database?.ok, systemStatus.checks?.database?.stockCount ? `${systemStatus.checks.database.stockCount} 只股票` : '待检查'],
-              ['行情源', systemStatus.checks?.data?.ok, systemStatus.checks?.data?.source ?? '待同步'],
-              ['短信', systemStatus.checks?.sms?.ok, systemStatus.checks?.sms?.name ?? '未配置'],
-              ['微信', systemStatus.checks?.wechat?.ok, systemStatus.checks?.wechat?.ok ? '已配置' : '未配置'],
-              ['任务', systemStatus.checks?.tasks?.ok, systemStatus.checks?.tasks?.errors?.length ? `${systemStatus.checks.tasks.errors.length} 个异常` : '正常'],
-              ['错误', systemStatus.checks?.errors?.ok, systemStatus.checks?.errors?.recent?.length ? `${systemStatus.checks.errors.recent.length} 条` : '无'],
-            ].map(([label, ok, text]) => (
-              <div key={label}>
-                <span>{label}</span>
-                <strong className={ok ? 'is-ok' : 'is-warn'}>{ok ? 'OK' : '检查'}</strong>
-                <em>{text}</em>
-              </div>
-            ))}
-          </div>
-          {systemStatus.checks?.tasks?.errors?.length > 0 && (
-            <div className="task-error-list">
-              {systemStatus.checks.tasks.errors.map((item) => (
-                <div key={item.taskId}>
-                  <span>{item.taskId}</span>
-                  <strong>{item.lastMessage || item.lastError || '等待后台重试'}</strong>
-                  <em>连续失败 {item.consecutiveFailures} 次，系统会缩短间隔自动重试。</em>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+      {(systemStatus || systemMonitor) && (
+        <OperationalMonitorCard systemMonitor={systemMonitor} systemStatus={systemStatus} />
       )}
 
       <section className="panel profile-panel">
@@ -4418,6 +4406,91 @@ function ProfileView({
         />
       )}
     </div>
+  )
+}
+
+function OperationalMonitorCard({ systemMonitor, systemStatus }) {
+  const score = systemMonitor?.score ?? (systemStatus?.status === 'ready' ? 90 : systemStatus?.status === 'needs_config' ? 72 : 50)
+  const statusLabel = systemMonitor?.status === 'healthy'
+    ? '运行正常'
+    : systemMonitor?.status === 'degraded'
+      ? '需要关注'
+      : '需要处理'
+  const dataSignal = systemMonitor?.signals?.data
+  const taskSignal = systemMonitor?.signals?.tasks
+  const errorSignal = systemMonitor?.signals?.errors
+  const databaseSignal = systemMonitor?.signals?.database ?? systemStatus?.checks?.database
+  const uptime = formatDuration(systemMonitor?.environment?.uptimeSeconds)
+  const monitorRows = [
+    {
+      label: '数据库',
+      ok: databaseSignal?.ok,
+      value: databaseSignal?.stockCount ? `${databaseSignal.stockCount} 只股票` : systemMonitor?.environment?.database ?? '待检查',
+    },
+    {
+      label: '行情',
+      ok: dataSignal?.ok ?? systemStatus?.checks?.data?.ok,
+      value: dataSignal?.ageMinutes === null || dataSignal?.ageMinutes === undefined
+        ? '等待刷新'
+        : `${dataSignal.ageMinutes} 分钟前`,
+    },
+    {
+      label: '后台任务',
+      ok: taskSignal?.ok ?? systemStatus?.checks?.tasks?.ok,
+      value: taskSignal?.consecutiveFailures ? `${taskSignal.consecutiveFailures} 次失败` : `${taskSignal?.count ?? 0} 项正常`,
+    },
+    {
+      label: '错误日志',
+      ok: errorSignal?.ok ?? systemStatus?.checks?.errors?.ok,
+      value: errorSignal?.recentCount ? `${errorSignal.recentCount} 条` : '无近期错误',
+    },
+  ]
+
+  return (
+    <section className="panel profile-panel ops-monitor">
+      <div className="section-title split">
+        <div>
+          <ShieldAlert size={18} />
+          <h2>运行监控</h2>
+        </div>
+        <span>{statusLabel}</span>
+      </div>
+      <div className="ops-monitor-hero">
+        <div>
+          <span>健康分</span>
+          <strong className={score >= 85 ? 'is-ok' : score >= 65 ? 'is-warn' : 'is-bad'}>{score}</strong>
+        </div>
+        <p>
+          后端已运行 {uptime}，当前为 {systemMonitor?.environment?.appEnv ?? 'development'} 环境。
+          行情覆盖约 {dataSignal?.quoteCoverage ?? 0}%，历史 K 线覆盖约 {dataSignal?.historyCoverage ?? 0}%。
+        </p>
+      </div>
+      <div className="system-check-grid">
+        {monitorRows.map((row) => (
+          <div key={row.label}>
+            <span>{row.label}</span>
+            <strong className={row.ok ? 'is-ok' : 'is-warn'}>{row.ok ? '正常' : '检查'}</strong>
+            <em>{row.value}</em>
+          </div>
+        ))}
+      </div>
+      <div className="ops-action-list">
+        {(systemMonitor?.actionItems ?? ['等待后端返回监控建议。']).map((item) => (
+          <p key={item}>{item}</p>
+        ))}
+      </div>
+      {systemMonitor?.signals?.errors?.items?.length > 0 && (
+        <div className="task-error-list">
+          {systemMonitor.signals.errors.items.slice(0, 2).map((item) => (
+            <div key={item.id}>
+              <span>{item.path}</span>
+              <strong>{item.message}</strong>
+              <em>{item.createdAt}</em>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   )
 }
 

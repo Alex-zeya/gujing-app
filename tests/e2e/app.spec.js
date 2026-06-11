@@ -41,6 +41,7 @@ test.describe('股镜核心用户流程', () => {
     await expect(page.getByRole('heading', { name: '观察池' })).toBeVisible()
 
     await page.getByRole('button', { name: '我的', exact: true }).click()
+    await expect(page.getByText('运行监控')).toBeVisible()
     await expect(page.getByText('安全和说明')).toBeVisible()
     const privacyPagePromise = page.context().waitForEvent('page')
     await page.getByRole('link', { name: '隐私政策网页' }).click()
