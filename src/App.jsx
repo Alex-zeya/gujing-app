@@ -2262,6 +2262,7 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
   const forecast = analysisScore.forecast
   const dataQuality = analysisScore.dataQuality
   const industryModel = analysisScore.industryModel ?? analysisScore.advice?.industryModel
+  const researchFramework = analysisScore.researchFramework ?? analysisScore.advice?.researchFramework
   const compliance = analysisScore.compliance
   const newsImpact = stock.newsImpact
 
@@ -2316,6 +2317,50 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
         </div>
         <p>{analysisScore.stance}：{analysisScore.reasons.join('，')}</p>
       </div>
+
+      {researchFramework && (
+        <details className="analysis-disclosure research-framework">
+          <summary>
+            <span>查看研究框架</span>
+            <strong>{researchFramework.conclusion}</strong>
+            <ChevronRight size={17} />
+          </summary>
+          <div className="research-framework-card">
+            <div className="research-framework-head">
+              <div>
+                <span>{researchFramework.title}</span>
+                <strong>{researchFramework.total}</strong>
+              </div>
+              <p>{researchFramework.summary}</p>
+            </div>
+            <div className="research-framework-grid">
+              {researchFramework.groups?.slice(0, 5).map((group) => (
+                <article key={group.id}>
+                  <div>
+                    <span>{group.title}</span>
+                    <strong>{group.score}</strong>
+                  </div>
+                  <b>{group.summary}</b>
+                  {group.evidence?.slice(0, 2).map((line) => (
+                    <p key={line}>{line}</p>
+                  ))}
+                </article>
+              ))}
+            </div>
+            <div className="research-framework-lists">
+              <div>
+                <span>支持理由</span>
+                {researchFramework.bullCase?.slice(0, 2).map((item) => <p key={item}>{item}</p>)}
+              </div>
+              <div>
+                <span>还要确认</span>
+                {researchFramework.nextQuestions?.slice(0, 2).map((item) => <p key={item}>{item}</p>)}
+              </div>
+            </div>
+            <small>{researchFramework.compliance}</small>
+          </div>
+        </details>
+      )}
 
       {forecast && (
         <div className="forecast-card">

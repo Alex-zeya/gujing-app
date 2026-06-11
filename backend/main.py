@@ -31,8 +31,9 @@ DEFAULT_USER_PROFILE = {
     "riskLevel": "稳健",
     "defaultMarket": "A股",
 }
-ADVICE_MODEL_VERSION = "advice-v2-personalized"
+ADVICE_MODEL_VERSION = "advice-v3-research-framework"
 FORECAST_MODEL_VERSION = "forecast-v1-rule-stat"
+RESEARCH_FRAMEWORK_VERSION = "research-v1-a-share-adapted"
 RECOMMENDATION_MODEL_VERSION = "recommend-v2-feedback"
 RISK_PROFILE_RULES = {
     "稳健": {
@@ -2430,6 +2431,210 @@ def build_stock_forecast(stock: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def market_cap_text(stock: dict[str, Any]) -> str:
+    raw_value = (stock.get("quoteStats") or {}).get("marketCap") or stock.get("marketCap")
+    value = number_or_none(raw_value)
+    if value is None or value <= 0:
+        return "待补充"
+    if value >= 100000000:
+        return f"{value / 100000000:.1f} 亿"
+    if value >= 10000:
+        return f"{value / 10000:.1f} 万"
+    return f"{value:.0f}"
+
+
+def build_research_framework(
+    stock: dict[str, Any],
+    *,
+    forecast: dict[str, Any] | None = None,
+    data_quality: dict[str, Any] | None = None,
+    holding: dict[str, Any] | None = None,
+    concentration_ratio: float | None = None,
+    risk_level: str | None = None,
+) -> dict[str, Any]:
+    performance = stock.get("performance", {})
+    day = float(performance.get("day", 0) or 0)
+    week = float(performance.get("week", 0) or 0)
+    month = float(performance.get("month", 0) or 0)
+    closes = history_closes(stock)
+    current_price = stock_price_number(stock)
+    forecast_data = forecast or build_stock_forecast(stock)
+    quality = data_quality or stock_data_quality(stock)
+    news_impact = stock.get("newsImpact") or {}
+    news_counts = news_impact.get("counts") or {}
+    risk_profile = risk_profile_rules(risk_level)
+    industry_model = industry_model_rules(stock.get("industry"))
+    quote_stats = stock.get("quoteStats") or {}
+    total_gain_rate = float((holding or {}).get("totalGainRate", 0) or 0)
+    position_ratio = float((holding or {}).get("positionRatio", 0) or 0)
+    latest_close = closes[-1] if closes else current_price
+    ma5 = moving_average(closes, 5)
+    ma20 = moving_average(closes, 20)
+
+    technical_score = clamp_score(
+        50
+        + day * 1.8
+        + week * 1.2
+        + month * 0.9
+        + (8 if ma5 and ma20 and ma5 >= ma20 else -6 if ma5 and ma20 else 0)
+    )
+    technical_summary = "趋势偏强" if technical_score >= 66 else "趋势承压" if technical_score <= 44 else "趋势中性"
+    technical_evidence = [
+        f"今日 {format_change(day)}，近一周 {format_change(week)}，近一月 {format_change(month)}。",
+        f"20日偏强概率 {forecast_data.get('probability20d', 50)}%，波动安全分 {forecast_data.get('riskScore', 50)}。",
+    ]
+    if ma5 and ma20:
+        technical_evidence.append(f"MA5 {ma5:.2f}，MA20 {ma20:.2f}，用于判断短中期方向。")
+
+    market_cap = market_cap_text(stock)
+    has_fundamental = market_cap != "待补充" or bool(stock.get("metrics"))
+    fundamental_score = clamp_score(
+        45
+        + (16 if has_fundamental else -8)
+        + (10 if quote_stats.get("pe") or quote_stats.get("pb") else 0)
+        + (8 if stock.get("industry") and stock.get("industry") != "A股" else 0)
+        + (5 if current_price else -5)
+    )
+    fundamental_summary = "基础资料可用" if fundamental_score >= 60 else "基本面待补充"
+    fundamental_evidence = [
+        f"企业市值 {market_cap}，行业分类：{stock.get('industry') or '待识别'}。",
+        f"行业模型采用“{industry_model['name']}”，重点看：{industry_model['focus']}",
+    ]
+    if quote_stats.get("open") or quote_stats.get("prevClose"):
+        fundamental_evidence.append(
+            f"今日开盘 {quote_stats.get('open') or '待补充'}，昨日收盘 {quote_stats.get('prevClose') or '待补充'}。"
+        )
+
+    positive_news = int(news_counts.get("positive", 0) or 0)
+    negative_news = int(news_counts.get("negative", 0) or 0)
+    news_score = clamp_score(55 + positive_news * 9 - negative_news * 11)
+    if positive_news > negative_news:
+        news_summary = "消息偏积极"
+    elif negative_news > positive_news:
+        news_summary = "消息偏谨慎"
+    elif news_impact.get("items"):
+        news_summary = "消息中性"
+    else:
+        news_summary = "消息待补充"
+    news_evidence = [
+        f"近期新闻样本：利好 {positive_news} 条，利空 {negative_news} 条。",
+        news_impact.get("stance") or "暂未读取到足够新闻样本。",
+    ]
+
+    holding_score = 58
+    holding_evidence = ["未提供持仓时，只生成观察建议，不直接判断是否加减仓。"]
+    holding_summary = "未持仓观察"
+    if holding:
+        holding_score = clamp_score(
+            62
+            + min(18, total_gain_rate * 0.9)
+            - max(0, position_ratio - float(risk_profile["positionLimit"])) * 1.6
+            - max(0, (concentration_ratio or 0) - 45) * 0.5
+        )
+        if position_ratio >= float(risk_profile["heavyPosition"]):
+            holding_summary = "仓位偏重"
+        elif total_gain_rate <= -10:
+            holding_summary = "亏损需复盘"
+        elif total_gain_rate >= 12:
+            holding_summary = "已有盈利垫"
+        else:
+            holding_summary = "持仓可观察"
+        holding_evidence = [
+            f"该股占组合 {position_ratio:.1f}%，累计盈亏 {format_change(total_gain_rate)}。",
+            f"{risk_profile['label']}型用户单股正常边界约 {risk_profile['normalTarget']}。",
+        ]
+        if concentration_ratio is not None:
+            holding_evidence.append(f"所属分类在组合中约占 {concentration_ratio:.0f}%。")
+
+    data_score = int(quality.get("score") or 50)
+    data_summary = str(quality.get("label") or "数据待检查")
+    data_evidence = [
+        f"实时行情：{quality.get('quote', '待检查')}，K线：{quality.get('history', '待检查')}，基本面：{quality.get('fundamental', '待检查')}。",
+        f"数据源可信度：{(quality.get('sourceTrust') or {}).get('label', '待确认')}。",
+    ]
+
+    groups = [
+        {
+            "id": "technical",
+            "title": "技术面",
+            "score": technical_score,
+            "summary": technical_summary,
+            "evidence": technical_evidence[:3],
+            "watch": "观察价格是否站稳短期均线，以及跌破支撑后的反应。",
+        },
+        {
+            "id": "fundamental",
+            "title": "基本面和估值",
+            "score": fundamental_score,
+            "summary": fundamental_summary,
+            "evidence": fundamental_evidence[:3],
+            "watch": "后续需要补充财报、估值分位和行业景气数据。",
+        },
+        {
+            "id": "news",
+            "title": "新闻和公告",
+            "score": news_score,
+            "summary": news_summary,
+            "evidence": news_evidence[:3],
+            "watch": "重大公告、财报和行业政策变化会改变短期判断。",
+        },
+        {
+            "id": "holding",
+            "title": "持仓上下文",
+            "score": holding_score,
+            "summary": holding_summary,
+            "evidence": holding_evidence[:3],
+            "watch": "建议要结合用户仓位、成本和风险偏好，而不是只看股票本身。",
+        },
+        {
+            "id": "data",
+            "title": "数据可信度",
+            "score": data_score,
+            "summary": data_summary,
+            "evidence": data_evidence[:3],
+            "watch": "若行情、K线或基本面缺失，系统会自动降低建议强度。",
+        },
+    ]
+    weighted_total = clamp_score(
+        technical_score * 0.3
+        + fundamental_score * 0.2
+        + news_score * 0.16
+        + holding_score * 0.18
+        + data_score * 0.16
+    )
+    top_groups = sorted(groups, key=lambda item: item["score"], reverse=True)[:2]
+    weak_groups = sorted(groups, key=lambda item: item["score"])[:2]
+    if weighted_total >= 70 and data_score >= 60:
+        conclusion = "研究优先级较高"
+    elif weighted_total >= 58:
+        conclusion = "可以继续跟踪"
+    elif data_score < 55:
+        conclusion = "先补数据再判断"
+    else:
+        conclusion = "谨慎观察"
+
+    return {
+        "version": RESEARCH_FRAMEWORK_VERSION,
+        "title": "A股多因子研究框架",
+        "sourceIdea": "参考美股投研流程，已改造成适合股镜的A股信息整理和风险观察结构。",
+        "total": weighted_total,
+        "conclusion": conclusion,
+        "summary": f"{stock.get('name', stock.get('code'))}当前研究评分 {weighted_total}，{conclusion}。",
+        "groups": groups,
+        "bullCase": [f"{item['title']}：{item['summary']}" for item in top_groups],
+        "bearCase": [f"{item['title']}：{item['watch']}" for item in weak_groups],
+        "dataGaps": quality.get("warnings", [])[:3],
+        "nextQuestions": [
+            "这只股票的上涨或下跌，是由行业、公司还是市场情绪驱动？",
+            "当前价格相对支撑位和压力位的位置是否舒服？",
+            "如果已经持有，单只股票仓位是否超过自己的风险边界？",
+        ],
+        "compliance": "仅用于信息整理和风险观察，不构成证券投资建议。",
+        "updated": now_text(),
+        "latestClose": round(latest_close, 2) if latest_close else None,
+    }
+
+
 def build_stock_advice_engine(
     stock: dict[str, Any],
     holding: dict[str, Any] | None = None,
@@ -2694,6 +2899,14 @@ def build_stock_advice_engine(
     if day >= 5:
         triggers.append({"name": "追高提醒", "text": "单日涨幅较高时，不建议直接追买。"})
 
+    research_framework = build_research_framework(
+        stock,
+        forecast=forecast,
+        data_quality=data_quality,
+        holding=holding,
+        concentration_ratio=concentration_ratio,
+        risk_level=risk_level,
+    )
     primary_reasons = sorted(rules, key=lambda item: item["score"], reverse=True)[:2]
     primary_risks = sorted(rules, key=lambda item: item["score"])[:2]
     return {
@@ -2733,6 +2946,7 @@ def build_stock_advice_engine(
             "forecastRiskScore": round(forecast_risk_score, 2),
         },
         "rules": rules,
+        "researchFramework": research_framework,
         "summary": "；".join(rule["conclusion"] for rule in primary_reasons),
         "risk": "；".join(rule["risk"] for rule in primary_risks),
         "trendView": next((rule["reason"] for rule in rules if rule["name"] == "趋势"), ""),
@@ -2788,6 +3002,11 @@ def score_stock_analysis(stock: dict[str, Any]) -> dict[str, Any]:
     data_quality = stock_data_quality(stock)
     advice_engine = build_stock_advice_engine(stock)
     forecast = build_stock_forecast(stock)
+    research_framework = advice_engine.get("researchFramework") or build_research_framework(
+        stock,
+        forecast=forecast,
+        data_quality=data_quality,
+    )
     analysis = {
         "modelVersion": ADVICE_MODEL_VERSION,
         "total": total_score,
@@ -2802,6 +3021,7 @@ def score_stock_analysis(stock: dict[str, Any]) -> dict[str, Any]:
         ],
         "advice": advice_engine,
         "forecast": forecast,
+        "researchFramework": research_framework,
         "dataQuality": data_quality,
         "sourceTrust": data_quality.get("sourceTrust"),
         "compliance": compliance_disclosure(forecast.get("confidence", {}).get("label")),
