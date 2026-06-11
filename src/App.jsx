@@ -5140,22 +5140,22 @@ function WatchView({
             })}
           </div>
         </details>
-
-        <section className="author-note">
-          <span>Alex-w有话说</span>
-          <p>
-            股镜会先把搜索、持仓、观察和行情缓存做稳，再逐步补齐更深的研究和通知能力。
-          </p>
-          <div>
-            <strong>最近进度</strong>
-            <ul>
-              <li>已支持企业名称、关键词和代码搜索</li>
-              <li>已支持持仓流水、观察提醒和每日免费数据补全</li>
-              <li>下一步继续做真机稳定性、公开域名和通知服务</li>
-            </ul>
-          </div>
-        </section>
       </details>
+
+      <section className="author-note">
+        <span>Alex-w有话说</span>
+        <p>
+          股镜会先把搜索、持仓、观察和行情缓存做稳，再逐步补齐更深的研究和通知能力。
+        </p>
+        <div>
+          <strong>最近进度</strong>
+          <ul>
+            <li>已支持企业名称、关键词和代码搜索</li>
+            <li>已支持持仓流水、观察提醒和每日免费数据补全</li>
+            <li>下一步继续做真机稳定性、公开域名和通知服务</li>
+          </ul>
+        </div>
+      </section>
     </div>
   )
 }
