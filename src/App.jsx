@@ -2341,16 +2341,28 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
 
       <div className="analysis-score-card">
         <div>
-          <span>系统评分</span>
+          <span>综合判断</span>
           <strong>{analysisScore.total}</strong>
         </div>
         <p>{analysisScore.stance}：{analysisScore.reasons.join('，')}</p>
       </div>
 
+      <div className="decision-copy">
+        <span>未来走势</span>
+        <p>{decision.trendView}</p>
+      </div>
+
+      <details className="analysis-disclosure analysis-more">
+        <summary>
+          <span>展开进阶分析</span>
+          <strong>模型、数据、行业</strong>
+          <ChevronRight size={17} />
+        </summary>
+        <div className="analysis-more-stack">
       {researchFramework && (
         <details className="analysis-disclosure research-framework">
           <summary>
-            <span>查看研究框架</span>
+            <span>研究框架</span>
             <strong>{researchFramework.conclusion}</strong>
             <ChevronRight size={17} />
           </summary>
@@ -2394,7 +2406,7 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
       {competitiveIntel && (
         <details className="analysis-disclosure competitive-intel">
           <summary>
-            <span>查看行业竞争力</span>
+            <span>行业竞争力</span>
             <strong>{competitiveIntel.verdict}</strong>
             <ChevronRight size={17} />
           </summary>
@@ -2444,7 +2456,7 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
       {fundamentalProfile && (
         <details className="analysis-disclosure fundamental-profile">
           <summary>
-            <span>查看基本面</span>
+            <span>基本面</span>
             <strong>{fundamentalProfile.label}</strong>
             <ChevronRight size={17} />
           </summary>
@@ -2497,7 +2509,7 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
         <div className="forecast-card">
           <div className="forecast-card__head">
             <div>
-              <span>预测模型 {forecast.version?.replace('v1-', 'v1 ') ?? 'v1'}</span>
+              <span>走势概率</span>
               <strong>{forecast.label}</strong>
             </div>
             <div className="forecast-card__meta">
@@ -2524,7 +2536,7 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
           <p>{forecast.stance}</p>
           <details className="analysis-disclosure">
             <summary>
-              <span>查看关键价位</span>
+              <span>关键价位</span>
               <ChevronRight size={17} />
             </summary>
             <div className="forecast-key-levels">
@@ -2544,7 +2556,7 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
           </details>
           <details className="analysis-disclosure">
             <summary>
-              <span>查看观察点和风险</span>
+              <span>观察点和风险</span>
               <ChevronRight size={17} />
             </summary>
             {forecast.watchPoints?.length > 0 && (
@@ -2566,7 +2578,7 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
           </details>
           <details className="analysis-disclosure">
             <summary>
-              <span>查看模型因子</span>
+              <span>模型因子</span>
               <ChevronRight size={17} />
             </summary>
             <div className="forecast-factor-list">
@@ -2587,7 +2599,7 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
 
       <details className="analysis-disclosure">
         <summary>
-          <span>查看评分明细</span>
+          <span>评分明细</span>
           <ChevronRight size={17} />
         </summary>
         <div className="analysis-factor-list">
@@ -2607,7 +2619,7 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
       {dataQuality && (
         <details className="analysis-disclosure">
           <summary>
-            <span>查看数据质量</span>
+            <span>数据质量</span>
             <strong>{dataQuality.label}</strong>
             <ChevronRight size={17} />
           </summary>
@@ -2637,7 +2649,7 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
       {industryModel && (
         <details className="analysis-disclosure">
           <summary>
-            <span>查看行业模型</span>
+            <span>行业模型</span>
             <strong>{industryModel.name}</strong>
             <ChevronRight size={17} />
           </summary>
@@ -2651,7 +2663,7 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
       {compliance && (
         <details className="analysis-disclosure">
           <summary>
-            <span>查看合规说明</span>
+            <span>合规说明</span>
             <ChevronRight size={17} />
           </summary>
           <div className="forecast-risk-list">
@@ -2667,7 +2679,7 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
       {decision.rules?.length ? (
         <details className="analysis-disclosure">
           <summary>
-            <span>查看持仓规则</span>
+            <span>持仓规则</span>
             <ChevronRight size={17} />
           </summary>
           <div className="advice-rule-list">
@@ -2687,13 +2699,9 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
 
       <details className="analysis-disclosure">
         <summary>
-          <span>查看走势和系统分析</span>
+          <span>系统分析</span>
           <ChevronRight size={17} />
         </summary>
-        <div className="decision-copy">
-          <span>未来走势推断</span>
-          <p>{decision.trendView}</p>
-        </div>
         <div className="decision-copy">
           <span>系统分析</span>
           <p>{decision.systemAnalysis}</p>
@@ -2703,7 +2711,7 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
       {newsImpact?.items?.length ? (
         <details className="analysis-disclosure">
           <summary>
-            <span>查看新闻影响</span>
+            <span>新闻影响</span>
             <strong>{newsImpact.stance}</strong>
             <ChevronRight size={17} />
           </summary>
@@ -2718,6 +2726,8 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
           </div>
         </details>
       ) : null}
+        </div>
+      </details>
     </section>
   )
 }
@@ -3469,27 +3479,6 @@ function PortfolioView({
         </div>
       </section>
 
-      <section className="health-grid">
-        <div>
-          <span>累计盈亏</span>
-          <strong className={totalGain >= 0 ? 'is-up' : 'is-down'}>
-            {currency(totalGain)}
-          </strong>
-        </div>
-        <div>
-          <span>累计收益率</span>
-          <strong className={totalGainRate >= 0 ? 'is-up' : 'is-down'}>
-            {formatPercent(totalGainRate)}
-          </strong>
-        </div>
-        <div>
-          <span>今日盈亏</span>
-          <strong className={portfolioDayGain >= 0 ? 'is-up' : 'is-down'}>
-            {currency(portfolioDayGain)}
-          </strong>
-        </div>
-      </section>
-
       <section className="panel portfolio-insight-card">
         <div className="section-title split">
           <div>
@@ -3518,14 +3507,15 @@ function PortfolioView({
       </section>
 
       {riskEngine && (
-        <section className="panel portfolio-risk-engine">
-          <div className="section-title split">
-            <div>
+        <details className="panel portfolio-risk-engine">
+          <summary>
+            <span>
               <BarChart3 size={18} />
-              <h2>组合风险引擎</h2>
-            </div>
-            <span>{riskEngine.version}</span>
-          </div>
+              高级风险
+            </span>
+            <em>分散度 {riskEngine.diversificationScore}</em>
+            <ChevronRight size={17} />
+          </summary>
           <div className="risk-engine-grid">
             <div>
               <span>分散度</span>
@@ -3545,7 +3535,7 @@ function PortfolioView({
               <p key={note}>{note}</p>
             ))}
           </div>
-        </section>
+        </details>
       )}
 
       <details
@@ -3557,7 +3547,7 @@ function PortfolioView({
         <summary>
           <span>
             <BarChart3 size={18} />
-            模型表现
+            建议复盘
           </span>
           <em>
             {backtests.summary?.hitRate !== null && backtests.summary?.hitRate !== undefined
@@ -4574,7 +4564,7 @@ function WatchView({
                   <span>今日涨跌</span>
                 </div>
                 <div className="watch-reason">
-                  <span>观察理由</span>
+                  <span>为什么关注</span>
                   <p>{watchDecision.trendView}</p>
                 </div>
                 <div className="watch-actions">
@@ -4743,103 +4733,113 @@ function WatchView({
         )}
       </section>
 
-      <section className="data-status">
-        <div>
-          <span>数据状态</span>
-          <strong>
-            {apiStatus === 'connected'
-              ? dataStatus?.mode === 'live'
-                ? '真实行情已刷新'
-                : dataStatus?.mode === 'fallback'
-                  ? '行情源暂不可用'
-                  : '后端已连接'
-              : '本地演示数据'}
-          </strong>
-        </div>
-        <p>{dataStatus?.message ?? '接入授权行情后，可切换为实时、延迟 15 分钟或盘后更新。'}</p>
-        {dataStatus?.stockDirectory && (
-          <p>
-            股票目录：{dataStatus.stockDirectory.count ?? 0} 只
-            {dataStatus.stockDirectory.mode === 'live' ? '，已接入全量名称库' : '，等待后台同步'}
-          </p>
-        )}
-        {dataStatus?.lastRefresh && <em>最近刷新：{dataStatus.lastRefresh}</em>}
-        <button type="button" onClick={refreshMarketData} disabled={isRefreshingData}>
-          {isRefreshingData ? '刷新中...' : '刷新行情'}
-        </button>
-      </section>
-
-      <details className="panel automation-panel">
+      <details className="panel system-tools-panel">
         <summary>
           <span>
             <Settings2 size={18} />
-            <strong>自动盯盘助手</strong>
+            <strong>系统工具</strong>
           </span>
-          <em>{taskStatus?.automation?.enabled ? '运行中' : '已暂停'}</em>
+          <em>{apiStatus === 'connected' ? '已连接' : '本地数据'}</em>
           <ChevronRight size={18} />
         </summary>
-        <div className="automation-hero">
-          <strong>你选股票，系统负责盯变化</strong>
-          <p>观察池、持仓和提醒规则会按固定频率检查。你可以随时手动检查一次，也可以只等系统通知。</p>
-        </div>
-        <div className="automation-focus">
-          {automationFocus.map((item) => (
-            <div key={item.label}>
-              <span>{item.label}</span>
-              <strong>{item.value}</strong>
-              <p>{item.text}</p>
+        <div className="system-tools-body">
+          <section className="data-status">
+            <div>
+              <span>数据状态</span>
+              <strong>
+                {apiStatus === 'connected'
+                  ? dataStatus?.mode === 'live'
+                    ? '真实行情已刷新'
+                    : dataStatus?.mode === 'fallback'
+                      ? '行情源暂不可用'
+                      : '后端已连接'
+                  : '本地演示数据'}
+              </strong>
             </div>
-          ))}
-        </div>
-        <div className="automation-actions">
-          <button type="button" onClick={checkAlertEvents} disabled={isCheckingAlerts}>
-            <CheckCheck size={16} />
-            {isCheckingAlerts ? '检查中...' : '立即检查提醒'}
-          </button>
-          <button type="button" onClick={refreshMarketData} disabled={isRefreshingData}>
-            <TrendingUp size={16} />
-            {isRefreshingData ? '刷新中...' : '刷新行情数据'}
-          </button>
-        </div>
-        <div className="automation-list">
-          {automationTasks.map((task) => {
-            const copy = automationTaskCopy[task.taskId] ?? {
-              title: task.label,
-              userText: '系统会按规则自动检查这个项目。',
-            }
-            return (
-            <div key={task.taskId}>
-              <strong>{copy.title}</strong>
-              <p>{copy.userText}</p>
-              <span>{task.lastRun ? `上次 ${task.lastRun}` : '等待首次运行'}</span>
-              <em>
-                {task.health?.consecutiveFailures
-                  ? `异常 ${task.health.consecutiveFailures} 次 · ${task.health.lastError ?? '待重试'}`
-                  : task.nextRun
-                    ? `下次 ${task.nextRun}`
-                    : `${task.intervalMinutes} 分钟间隔`}
-              </em>
-            </div>
-            )
-          })}
-        </div>
-      </details>
+            <p>{dataStatus?.message ?? '接入授权行情后，可切换为实时、延迟 15 分钟或盘后更新。'}</p>
+            {dataStatus?.stockDirectory && (
+              <p>
+                股票目录：{dataStatus.stockDirectory.count ?? 0} 只
+                {dataStatus.stockDirectory.mode === 'live' ? '，已接入全量名称库' : '，等待后台同步'}
+              </p>
+            )}
+            {dataStatus?.lastRefresh && <em>最近刷新：{dataStatus.lastRefresh}</em>}
+            <button type="button" onClick={refreshMarketData} disabled={isRefreshingData}>
+              {isRefreshingData ? '刷新中...' : '刷新行情'}
+            </button>
+          </section>
 
-      <section className="author-note">
-        <span>Alex-w有话说</span>
-        <p>
-          前端主结构已经跑通，后端也开始接入真实持仓逻辑：搜索、观察、持仓和行情缓存会逐步变成可长期使用的数据底座。
-        </p>
-        <div>
-          <strong>最近进度</strong>
-          <ul>
-            <li>已新增全量 A 股股票目录库，支持企业名称、关键词和代码搜索</li>
-            <li>已支持买入、减仓、修改成本和持仓流水</li>
-            <li>后台会自动同步目录、行情、观察提醒和新闻缓存</li>
-            <li>下一步会继续完善上架材料、稳定性监控和真实通知服务</li>
-          </ul>
+          <section className="automation-panel">
+            <div className="automation-hero">
+              <strong>自动盯盘助手</strong>
+              <p>观察池、持仓和提醒规则会按固定频率检查。你可以随时手动检查一次，也可以只等系统通知。</p>
+            </div>
+            <div className="automation-focus">
+              {automationFocus.map((item) => (
+                <div key={item.label}>
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                  <p>{item.text}</p>
+                </div>
+              ))}
+            </div>
+            <div className="automation-actions">
+              <button type="button" onClick={checkAlertEvents} disabled={isCheckingAlerts}>
+                <CheckCheck size={16} />
+                {isCheckingAlerts ? '检查中...' : '立即检查提醒'}
+              </button>
+              <button type="button" onClick={refreshMarketData} disabled={isRefreshingData}>
+                <TrendingUp size={16} />
+                {isRefreshingData ? '刷新中...' : '刷新行情数据'}
+              </button>
+            </div>
+          </section>
         </div>
-      </section>
+
+        <details className="automation-list-detail">
+          <summary>
+            <span>后台任务</span>
+            <em>{automationTasks.length} 项</em>
+          </summary>
+          <div className="automation-list">
+            {automationTasks.map((task) => {
+              const copy = automationTaskCopy[task.taskId] ?? {
+                title: task.label,
+                userText: '系统会按规则自动检查这个项目。',
+              }
+              return (
+              <div key={task.taskId}>
+                <strong>{copy.title}</strong>
+                <p>{copy.userText}</p>
+                <span>{task.lastRun ? `上次 ${task.lastRun}` : '等待首次运行'}</span>
+                <em>
+                  {task.health?.consecutiveFailures
+                    ? `异常 ${task.health.consecutiveFailures} 次 · ${task.health.lastError ?? '待重试'}`
+                    : task.nextRun
+                      ? `下次 ${task.nextRun}`
+                      : `${task.intervalMinutes} 分钟间隔`}
+                </em>
+              </div>
+              )
+            })}
+          </div>
+        </details>
+
+        <section className="author-note">
+          <span>Alex-w有话说</span>
+          <p>
+            股镜会先把搜索、持仓、观察和行情缓存做稳，再逐步补齐更深的研究和通知能力。
+          </p>
+          <div>
+            <strong>最近进度</strong>
+            <ul>
+              <li>已支持企业名称、关键词和代码搜索</li>
+              <li>已支持持仓流水、观察提醒和每日免费数据补全</li>
+              <li>下一步继续做真机稳定性、公开域名和通知服务</li>
+            </ul>
+          </div>
+        </section>
+      </details>
     </div>
   )
 }

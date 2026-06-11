@@ -1880,6 +1880,48 @@
   gap: 10px;
 }
 
+.portfolio-risk-engine summary {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  cursor: pointer;
+  list-style: none;
+}
+
+.portfolio-risk-engine summary::-webkit-details-marker {
+  display: none;
+}
+
+.portfolio-risk-engine summary span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--primary);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.portfolio-risk-engine summary em {
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.portfolio-risk-engine summary svg:last-child {
+  color: var(--muted);
+  transition: transform 180ms ease;
+}
+
+.portfolio-risk-engine[open] summary svg:last-child {
+  transform: rotate(90deg);
+}
+
 .risk-engine-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3048,6 +3090,25 @@
   margin: 0 10px 10px;
 }
 
+.analysis-more {
+  background: color-mix(in oklch, var(--primary-soft), white 56%);
+}
+
+.analysis-more > summary {
+  min-height: 50px;
+}
+
+.analysis-more-stack {
+  display: grid;
+  gap: 9px;
+}
+
+.analysis-more-stack > .analysis-disclosure,
+.analysis-more-stack > .forecast-card {
+  margin: 0;
+  background: var(--surface);
+}
+
 .research-framework-card {
   display: grid;
   gap: 10px;
@@ -3550,11 +3611,14 @@
   content: '';
 }
 
+.system-tools-panel,
 .automation-panel {
   padding: 0;
   overflow: hidden;
 }
 
+.system-tools-panel > summary,
+.automation-list-detail summary,
 .automation-panel summary {
   display: flex;
   align-items: center;
@@ -3568,10 +3632,52 @@
   list-style: none;
 }
 
+.system-tools-panel > summary,
+.automation-list-detail summary {
+  min-height: 52px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 0 12px;
+}
+
 .automation-panel summary::-webkit-details-marker {
   display: none;
 }
 
+.system-tools-panel > summary::-webkit-details-marker,
+.automation-list-detail summary::-webkit-details-marker {
+  display: none;
+}
+
+.automation-list-detail summary {
+  background: var(--surface);
+}
+
+.system-tools-body {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.system-tools-body .data-status,
+.system-tools-body .automation-panel {
+  margin: 0;
+}
+
+.system-tools-body .automation-hero,
+.system-tools-body .automation-focus,
+.system-tools-body .automation-actions {
+  margin-inline: 0;
+}
+
+.automation-list-detail {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.system-tools-panel > summary span,
+.automation-list-detail summary span,
 .automation-panel summary span {
   display: inline-flex;
   align-items: center;
@@ -3581,6 +3687,7 @@
   color: var(--primary);
 }
 
+.system-tools-panel > summary strong,
 .automation-panel summary strong {
   color: var(--primary);
   font-size: 18px;
@@ -3588,6 +3695,8 @@
   line-height: 1.15;
 }
 
+.system-tools-panel > summary em,
+.automation-list-detail summary em,
 .automation-panel summary em {
   flex: 0 0 auto;
   border-radius: 999px;
@@ -3599,12 +3708,14 @@
   font-weight: 850;
 }
 
+.system-tools-panel > summary svg:last-child,
 .automation-panel summary svg:last-child {
   flex: 0 0 auto;
   color: var(--primary);
   transition: transform 180ms ease;
 }
 
+.system-tools-panel[open] > summary svg:last-child,
 .automation-panel[open] summary svg:last-child {
   transform: rotate(90deg);
 }
