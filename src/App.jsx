@@ -23,6 +23,7 @@ import './App.css'
 
 const GujingAppleSignIn = registerPlugin('GujingAppleSignIn')
 const GujingWechatLogin = registerPlugin('GujingWechatLogin')
+const SHOW_ADMIN_TOOLS = import.meta.env.VITE_SHOW_ADMIN_TOOLS === 'true'
 
 function isNativeIosApp() {
   return Capacitor.getPlatform?.() === 'ios' && Capacitor.isNativePlatform?.()
@@ -4592,7 +4593,7 @@ function ProfileView({
         </div>
       </section>
 
-      {(systemStatus || systemMonitor) && (
+      {SHOW_ADMIN_TOOLS && (systemStatus || systemMonitor) && (
         <OperationalMonitorCard systemMonitor={systemMonitor} systemStatus={systemStatus} />
       )}
 
@@ -5460,7 +5461,7 @@ function WatchView({
         )}
       </section>
 
-      <details className="panel system-tools-panel">
+      <details className="panel system-tools-panel" hidden={!SHOW_ADMIN_TOOLS}>
         <summary>
           <span>
             <Settings2 size={18} />
@@ -5618,14 +5619,15 @@ function WatchView({
       <section className="author-note">
         <span>Alex-w有话说</span>
         <p>
-          股镜会先把搜索、持仓、观察和行情缓存做稳，再逐步完善更深的研究和通知能力。
+          股镜现在专注帮普通用户把 A 股搜索、行情、K 线、持仓和观察池整理清楚。它不会替你做买卖决定，而是在行动前多给一层风险检查。
         </p>
         <div>
           <strong>最近进度</strong>
           <ul>
-            <li>已支持企业名称、关键词和代码搜索</li>
-            <li>已支持持仓流水、观察提醒和每日免费数据补全</li>
-            <li>下一步继续做真机稳定性、公开域名和通知服务</li>
+            <li>已接入线上后端、全量 A 股名称库和每日数据补全</li>
+            <li>已支持企业名称搜索、K 线分析、持仓本金和收益记录</li>
+            <li>下一步继续打磨真实登录、行情稳定性和真机体验</li>
+            <li>也谢谢 Wendy 同学一路试用、提建议，帮我把很多不清楚的地方指出来。</li>
           </ul>
         </div>
       </section>
