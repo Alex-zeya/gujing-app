@@ -762,7 +762,7 @@ function buildStockDecision(stock) {
   if (isStrong) {
     return {
       hasHistory,
-      holdingAdvice: score >= 70 ? '可以继续持仓观察' : '趋势较强，但不要追高加仓',
+      holdingAdvice: score >= 70 ? '持仓观察条件较好' : '趋势较强，但追高风险较高',
       trendView: `近一月上涨 ${monthMove.toFixed(2)}%，价格仍有惯性。短期重点看回撤时能不能守住近 10 日均价区域。`,
       systemAnalysis: `${stock.name}短期走势占优，但上涨后风险也会变高。适合把观察重点放在成交额持续性、公告变化和${industryHint}热度是否延续。`,
     }
@@ -771,7 +771,7 @@ function buildStockDecision(stock) {
   if (isRecovering) {
     return {
       hasHistory,
-      holdingAdvice: '可以轻仓观察，暂不急于加仓',
+      holdingAdvice: '可以轻仓观察，新增资金先等确认',
       trendView: `近一月小幅修复 ${monthMove.toFixed(2)}%，走势开始改善但还不算强。需要再看 3 到 5 个交易日确认。`,
       systemAnalysis: `${stock.name}目前更像修复阶段，适合作为观察样本。若后续价格能站稳并且成交额不萎缩，持仓信心会更高；若冲高回落，则继续按风险股处理。`,
     }
@@ -5510,7 +5510,7 @@ function RiskNotice() {
     <aside className="risk-notice">
       <AlertTriangle size={17} />
       <p>
-        本工具仅做信息整理和风险观察，不构成证券投资建议。样例内容为演示数据。
+        本工具仅做信息整理和风险观察，不构成证券投资建议。部分内容可能来自缓存或演示样本。
       </p>
     </aside>
   )

@@ -384,6 +384,7 @@ QUOTE_CACHE_MINUTES = 3
 HISTORY_CACHE_MINUTES = 12 * 60
 DAILY_BACKFILL_MINUTES = 24 * 60
 DAILY_BACKFILL_LIMIT = int(os.getenv("DAILY_BACKFILL_LIMIT", "40"))
+MIN_A_STOCK_DIRECTORY_COUNT = int(os.getenv("MIN_A_STOCK_DIRECTORY_COUNT", "4500"))
 HISTORY_FAILURE_RETRY_MINUTES = 30
 NEWS_CACHE_MINUTES = 60
 BACKGROUND_TASK_TICK_SECONDS = 30
@@ -2707,7 +2708,7 @@ def build_stock_forecast(stock: dict[str, Any]) -> dict[str, Any]:
 
     if probability_20d >= 66 and risk_score >= 55:
         label = "偏强"
-        stance = "可继续观察，适合等回调或确认后再加仓。"
+        stance = "可继续观察，新增资金更适合等回调或确认信号。"
     elif probability_20d >= 56:
         label = "中性偏强"
         stance = "可以跟踪，但不适合只凭短期涨幅重仓。"
@@ -3351,7 +3352,7 @@ def build_stock_advice_engine(
     if month >= 8 and week >= 0:
         trend_conclusion = "趋势偏强"
         trend_reason = f"近一月 {format_change(month)}，近一周 {format_change(week)}，价格惯性仍在。"
-        trend_risk = "短期涨幅已释放，追高加仓容易承受回撤。"
+        trend_risk = "短期涨幅已释放，追高容易承受回撤。"
     elif month <= -8:
         trend_conclusion = "趋势偏弱"
         trend_reason = f"近一月 {format_change(month)}，趋势修复还不充分。"
@@ -3370,7 +3371,7 @@ def build_stock_advice_engine(
     if abs(day) >= 5 or volatility >= 18:
         volatility_conclusion = "波动偏高"
         volatility_reason = f"今日 {format_change(day)}，近阶段价格振幅约 {volatility:.2f}%。"
-        volatility_risk = "高波动会放大持仓体验，适合降低单次买入金额。"
+        volatility_risk = "高波动会放大持仓体验，新增资金需要更谨慎。"
     elif abs(day) >= 3 or volatility >= 10:
         volatility_conclusion = "波动中等"
         volatility_reason = f"今日 {format_change(day)}，近期振幅约 {volatility:.2f}%。"
@@ -3440,7 +3441,7 @@ def build_stock_advice_engine(
         else:
             profit_conclusion = "盈亏温和"
             profit_reason = f"当前累计收益 {format_change(total_gain_rate)}，持仓压力不算极端。"
-            profit_risk = "收益不高时，加仓应更多依赖趋势和基本面。"
+            profit_risk = "收益不高时，新增资金应更多依赖趋势和基本面。"
         add_rule("盈亏", profit_score, profit_conclusion, profit_reason, profit_risk, 0.14)
 
         position_limit = float(risk_profile["positionLimit"])
@@ -3453,7 +3454,7 @@ def build_stock_advice_engine(
         elif position_ratio >= position_limit:
             position_conclusion = "仓位适中偏高"
             position_reason = f"该股占组合 {position_ratio:.1f}%，对{risk_profile['label']}型用户来说需要持续跟踪。"
-            position_risk = "继续加仓前应确认行业和趋势都支持。"
+            position_risk = "继续提高仓位前应确认行业和趋势都支持。"
         else:
             position_conclusion = "仓位可控"
             position_reason = f"该股占组合 {position_ratio:.1f}%，符合{risk_profile['label']}型用户的仓位边界。"
@@ -3481,13 +3482,13 @@ def build_stock_advice_engine(
     total = clamp_score(weighted_score / weight_total + float(risk_profile["scoreOffset"]))
     blocking_risk = any(rule["score"] < 38 for rule in rules if rule["name"] in {"趋势", "波动", "盈亏", "仓位"})
     if total >= 72 and not blocking_risk:
-        stance = "建议继续持仓观察"
+        stance = "持仓观察条件较好"
     elif total >= 62:
         stance = "可以轻仓或正常观察"
     elif total >= 48:
         stance = "暂不建议重仓持有"
     else:
-        stance = "建议控制仓位"
+        stance = "仓位风险偏高"
     if data_quality["score"] < 55:
         stance = "数据不足，先观察"
 
@@ -3507,31 +3508,31 @@ def build_stock_advice_engine(
             target_position = risk_profile["normalTarget"]
         elif position_ratio >= float(risk_profile["heavyPosition"]) and (forecast_probability < 55 or total_gain_rate < 0):
             action_code = "reduce"
-            action_label = "降低仓位"
+            action_label = "仓位偏高警示"
             action_reason = "单股仓位偏高，且预测或盈亏没有给出足够安全边际。"
             target_position = risk_profile["normalTarget"]
             next_actions.append("先把单只股票对组合的影响降下来。")
         elif total_gain_rate <= -12 and forecast_probability < 52:
             action_code = "reduce"
-            action_label = "止损式减仓"
+            action_label = "亏损风险警示"
             action_reason = "亏损较深且模型没有明显修复信号。"
             target_position = "0%-10%" if risk_profile["label"] == "稳健" else "0%-15%"
             next_actions.append("不要用补仓摊低成本代替重新判断。")
         elif forecast_probability >= 62 and forecast_risk_score >= 55 and position_ratio <= float(risk_profile["positionLimit"]) and total_gain_rate > -8:
             action_code = "hold_or_add"
-            action_label = "继续持有"
+            action_label = "继续跟踪"
             action_reason = "模型偏强、仓位不重，适合继续跟踪。"
             target_position = risk_profile["maxTarget"]
             next_actions.append("若回调不破支撑，可考虑小额分批。")
         elif total >= 62 and position_ratio <= float(risk_profile["heavyPosition"]):
             action_code = "hold"
-            action_label = "正常持有"
+            action_label = "维持观察"
             action_reason = "持仓风险暂未明显失衡，继续看趋势确认。"
             target_position = risk_profile["maxTarget"]
             next_actions.append("保持仓位，等趋势或基本面更明确。")
         elif forecast_probability < 48 or forecast_risk_score < 45:
             action_code = "no_add"
-            action_label = "暂不加仓"
+            action_label = "新增资金谨慎"
             action_reason = "预测概率或波动安全分偏弱。"
             target_position = risk_profile["normalTarget"]
             next_actions.append("先观察价格能否重新站稳短期均线。")
@@ -3554,7 +3555,7 @@ def build_stock_advice_engine(
             next_actions.append("等待回调不破支撑或放量突破后再考虑。")
         elif forecast_probability <= 44:
             action_code = "avoid"
-            action_label = "暂不买入"
+            action_label = "先不纳入持仓"
             action_reason = "模型偏谨慎，先等趋势修复。"
             next_actions.append("不因为短线反弹就急着建仓。")
 
@@ -6158,7 +6159,7 @@ def data_status_show() -> dict[str, Any]:
             "quote": ["easyquotation:tencent", "easyquotation:sina"],
             "history": ["Tushare", "东方财富"],
             "news": ["AkShare 东方财富新闻", "news_cache"],
-            "fundamental": ["东方财富扩展字段", "待接入财报源"],
+            "fundamental": ["东方财富公开字段", "Tushare Pro 可选增强"],
         },
         "cachePolicy": {
             "quoteMinutes": QUOTE_CACHE_MINUTES,
@@ -6614,7 +6615,7 @@ def auth_wechat_login(_: WechatLoginPayload) -> dict[str, Any]:
             status_code=501,
             detail="微信登录需要先在微信开放平台创建移动应用，并配置 WECHAT_APP_ID/WECHAT_APP_SECRET。",
         )
-    raise HTTPException(status_code=501, detail="微信授权换取 openid 的服务端流程待接入。")
+    raise HTTPException(status_code=501, detail="微信登录服务暂未启用，请先使用手机号登录。")
 
 
 @app.post("/api/auth/logout")
@@ -6815,7 +6816,11 @@ def render_service_url() -> str:
 
 def system_readiness_payload() -> dict[str, Any]:
     data_status = get_data_status()
+    directory_status = get_directory_status()
     tasks = list_task_statuses()["tasks"]
+    task_ids = {task.get("taskId") for task in tasks}
+    directory_count = int(directory_status.get("count") or 0)
+    daily_backfill_status = get_app_setting("daily_backfill_status", {}) or {}
     task_errors = [
         {
             "taskId": task["taskId"],
@@ -6836,6 +6841,24 @@ def system_readiness_payload() -> dict[str, Any]:
             "source": data_status.get("source"),
             "lastRefresh": data_status.get("lastRefresh"),
             "message": data_status.get("message"),
+        },
+        "stockDirectory": {
+            "ok": directory_count >= MIN_A_STOCK_DIRECTORY_COUNT and directory_status.get("mode") == "live",
+            "mode": directory_status.get("mode"),
+            "source": directory_status.get("source"),
+            "count": directory_count,
+            "minimum": MIN_A_STOCK_DIRECTORY_COUNT,
+            "lastRefresh": directory_status.get("lastRefresh"),
+            "message": directory_status.get("message"),
+        },
+        "dailyBackfill": {
+            "ok": "daily_data_backfill" in task_ids,
+            "taskId": "daily_data_backfill",
+            "configured": "daily_data_backfill" in task_ids,
+            "lastRefresh": daily_backfill_status.get("lastRefresh"),
+            "syncedCount": daily_backfill_status.get("syncedCount", 0),
+            "targetCount": daily_backfill_status.get("targetCount", 0),
+            "message": daily_backfill_status.get("message") or "后台每日补全任务需要在线上运行一次后显示结果。",
         },
         "sms": {
             "ok": bool(sms_status.get("ready")),
@@ -6883,7 +6906,7 @@ def system_readiness_payload() -> dict[str, Any]:
             "recent": recent_error_audit(limit=5),
         },
     }
-    required_ok = ["database", "data", "cors", "frontend"]
+    required_ok = ["database", "data", "stockDirectory", "dailyBackfill", "cors", "frontend"]
     optional_ok = ["sms", "wechat", "tushare", "tasks", "errors"]
     status = "ready" if all(checks[key]["ok"] for key in required_ok) else "blocked"
     if status == "ready" and any(not checks[key]["ok"] for key in optional_ok):
@@ -6939,6 +6962,22 @@ def launch_readiness_payload(checks: dict[str, Any]) -> dict[str, Any]:
             "required": True,
             "summary": "A股搜索、行情、历史K线和分析建议需要稳定数据。",
             "next": "保持免费源兜底，同时准备授权数据源或稳定 Token。",
+        },
+        {
+            "id": "stock_directory",
+            "label": "全量A股目录",
+            "ok": bool(checks.get("stockDirectory", {}).get("ok")),
+            "required": True,
+            "summary": "搜索中文名、行业关键词和拼音首字母需要完整股票名称库。",
+            "next": "执行 /api/data/sync-stock-directory，确认目录数量达到全量 A 股水平。",
+        },
+        {
+            "id": "daily_backfill",
+            "label": "每日数据补全",
+            "ok": bool(checks.get("dailyBackfill", {}).get("ok")),
+            "required": True,
+            "summary": "每日补全负责把持仓、观察池和常搜股票的行情、K线、基础字段补齐。",
+            "next": "确认后台任务包含 daily_data_backfill，并手动执行 /api/data/backfill/daily 做首次补全。",
         },
         {
             "id": "ios_api",

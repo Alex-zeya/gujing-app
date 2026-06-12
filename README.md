@@ -218,12 +218,14 @@ npm run deploy:check -- https://你的后端域名
 - `DATABASE_URL` 已生效。
 - `TUSHARE_TOKEN` 已配置；如果 token 权限不足，历史 K 线继续走免费源兜底。
 - `/api/data/backfill/daily` 可访问，后台任务包含 `daily_data_backfill`。
+- `/api/system/readiness` 里的 `stockDirectory` 达到全量 A 股目录阈值，默认不少于 4500 只。
+- `/api/system/readiness` 里的 `dailyBackfill` 显示已注册，并且首次手动补全可以成功返回。
 - `CORS_ORIGINS` 包含 iOS WebView 和正式前端来源。
 - `VITE_API_BASE_URL` 指向 HTTPS 后端。
 - `PRIVACY_POLICY_URL` 是公开 HTTPS 地址。
 - 短信服务商不再使用 mock。
 
-如果 `deploy:check` 显示线上仍是 SQLite、股票目录只有少量种子数据，或每日补全接口返回 404，优先在 Render 里重新部署最新 `main` 分支，并确认 Blueprint 或环境变量已经把 `DATABASE_URL` 和 `TUSHARE_TOKEN` 注入到 `gujing-api` 服务。
+如果 `deploy:check` 显示线上仍是 SQLite、股票目录只有少量种子数据、每日补全接口返回 404，或 readiness 里没有 `stockDirectory` / `dailyBackfill` 字段，优先在 Render 里执行 **Manual Deploy / Blueprint Sync** 重新部署最新 `main` 分支，并确认 Blueprint 或环境变量已经把 `DATABASE_URL`、`TUSHARE_TOKEN`、`MIN_A_STOCK_DIRECTORY_COUNT` 注入到 `gujing-api` 服务。
 
 ## 上线前剩余工作
 

@@ -37,6 +37,8 @@ async function main() {
   console.log(`DATABASE_URL：${mark(checks.database?.mode === 'postgres')}，当前 ${checks.database?.mode || 'unknown'}`)
   console.log(`TUSHARE_TOKEN：${mark(Boolean(checks.tushare?.configured || checks.tushare?.ok))}`)
   console.log(`数据状态：${checks.data?.mode || 'unknown'}，${checks.data?.message || '暂无消息'}`)
+  console.log(`A股目录：${mark(Boolean(checks.stockDirectory?.ok))}，${checks.stockDirectory?.count ?? 0}/${checks.stockDirectory?.minimum ?? 4500} 只`)
+  console.log(`每日补全：${mark(Boolean(checks.dailyBackfill?.ok))}，最近 ${checks.dailyBackfill?.syncedCount ?? 0} 只`)
   console.log(`部署地址：${checks.deployment?.serviceUrl || '未检测到'}`)
 
   const dataStatus = await readJson('/api/data/status')
@@ -66,6 +68,8 @@ async function main() {
   if (!hasLatestReadiness) blockers.push('重新部署 Render 最新 main 分支')
   if (checks.database?.mode !== 'postgres') blockers.push('在 Render 配置 DATABASE_URL / PostgreSQL')
   if (!(checks.tushare?.configured || checks.tushare?.ok)) blockers.push('在 Render 配置 TUSHARE_TOKEN')
+  if (checks.stockDirectory && !checks.stockDirectory.ok) blockers.push('执行全量 A 股目录同步，确认股票目录数量达到上线阈值')
+  if (checks.dailyBackfill && !checks.dailyBackfill.ok) blockers.push('确认每日数据补全任务已在线上注册并运行')
   if (!taskIds.includes('daily_data_backfill')) blockers.push('确认线上代码包含 daily_data_backfill 后台任务')
 
   if (blockers.length) {

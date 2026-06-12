@@ -17,7 +17,13 @@ async function main() {
   console.log(`状态：${launch.status || payload.status || 'unknown'}`)
   console.log(`接口：${baseUrl}`)
   console.log(`数据库：${checks.database?.mode || 'unknown'}，股票目录 ${checks.database?.stockCount ?? 0} 只`)
+  if (checks.stockDirectory) {
+    console.log(`A股目录：${checks.stockDirectory.count ?? 0}/${checks.stockDirectory.minimum ?? 4500} 只，${checks.stockDirectory.message || '暂无状态'}`)
+  }
   console.log(`行情：${checks.data?.mode || 'unknown'}，${checks.data?.message || '暂无状态'}`)
+  if (checks.dailyBackfill) {
+    console.log(`每日补全：${checks.dailyBackfill.configured ? '已注册' : '未注册'}，最近 ${checks.dailyBackfill.syncedCount ?? 0} 只`)
+  }
   console.log(`登录：${checks.sms?.provider || 'unknown'} / ${checks.sms?.name || '未配置'}`)
   console.log(`生产地址：${checks.deployment?.serviceUrl || '未检测到 Render HTTPS 地址'}`)
   console.log('')
