@@ -4680,6 +4680,9 @@ function ProfileView({
           <a href="/privacy.html" target="_blank" rel="noreferrer">
             隐私政策网页
           </a>
+          <a href="/terms.html" target="_blank" rel="noreferrer">
+            用户协议网页
+          </a>
           <a href="/support.html" target="_blank" rel="noreferrer">
             支持中心
           </a>
@@ -4991,6 +4994,8 @@ function LegalQuickLinks({ openLegalPanel }) {
       <button type="button" onClick={() => openLegalPanel('risk')}>风险说明</button>
       <span aria-hidden="true">·</span>
       <button type="button" onClick={() => openLegalPanel('privacy')}>隐私说明</button>
+      <span aria-hidden="true">·</span>
+      <a href="/terms.html" target="_blank" rel="noreferrer">用户协议</a>
     </div>
   )
 }
@@ -5026,9 +5031,14 @@ function LegalSheet({ type, onClose }) {
         </div>
 
         {type === 'privacy' && (
-          <a className="legal-sheet-link" href="/privacy.html" target="_blank" rel="noreferrer">
-            打开完整隐私政策网页
-          </a>
+          <div className="legal-sheet-link-stack">
+            <a className="legal-sheet-link" href="/privacy.html" target="_blank" rel="noreferrer">
+              打开完整隐私政策网页
+            </a>
+            <a className="legal-sheet-link" href="/terms.html" target="_blank" rel="noreferrer">
+              打开用户协议网页
+            </a>
+          </div>
         )}
 
         <RiskNotice />

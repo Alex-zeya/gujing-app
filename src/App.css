@@ -272,12 +272,14 @@
   font-weight: 800;
 }
 
-.legal-quick-links button {
+.legal-quick-links button,
+.legal-quick-links a {
   border: 0;
   padding: 6px 2px;
   background: transparent;
   color: var(--primary);
   font: inherit;
+  text-decoration: none;
 }
 
 .view-stack {
@@ -5648,6 +5650,11 @@
   min-height: 42px;
   border-color: oklch(0.74 0.055 255);
   background: var(--primary-soft);
+}
+
+.legal-sheet-link-stack {
+  display: grid;
+  gap: 8px;
 }
 
 .auth-panel,
