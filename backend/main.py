@@ -6803,6 +6803,16 @@ def database_readiness() -> dict[str, Any]:
         }
 
 
+def render_service_url() -> str:
+    explicit_url = os.getenv("RENDER_EXTERNAL_URL", "").strip()
+    if explicit_url:
+        return explicit_url.rstrip("/")
+    service_name = os.getenv("RENDER_SERVICE_NAME", "").strip()
+    if service_name:
+        return f"https://{service_name}.onrender.com"
+    return ""
+
+
 def system_readiness_payload() -> dict[str, Any]:
     data_status = get_data_status()
     tasks = list_task_statuses()["tasks"]
@@ -6817,6 +6827,7 @@ def system_readiness_payload() -> dict[str, Any]:
         if task.get("lastError") or (task.get("health") or {}).get("consecutiveFailures", 0)
     ]
     sms_status = sms_provider_status()
+    service_url = render_service_url()
     checks = {
         "database": database_readiness(),
         "data": {
@@ -6851,15 +6862,15 @@ def system_readiness_payload() -> dict[str, Any]:
         },
         "frontend": {
             "ok": True,
-            "expectedApiBaseUrl": os.getenv("RENDER_EXTERNAL_URL") or "http://localhost:8010",
+            "expectedApiBaseUrl": service_url or "http://localhost:8010",
             "viteEnv": "VITE_API_BASE_URL 可覆盖，默认 http://localhost:8010",
         },
         "deployment": {
-            "ok": os.getenv("APP_ENV", "development") == "production" and bool(os.getenv("RENDER_EXTERNAL_URL", "").startswith("https://")),
+            "ok": os.getenv("APP_ENV", "development") == "production" and bool(service_url.startswith("https://")),
             "appEnv": os.getenv("APP_ENV", "development"),
             "isRender": bool(os.getenv("RENDER_SERVICE_NAME")),
             "serviceName": os.getenv("RENDER_SERVICE_NAME"),
-            "serviceUrl": os.getenv("RENDER_EXTERNAL_URL"),
+            "serviceUrl": service_url or None,
             "gitCommit": os.getenv("RENDER_GIT_COMMIT"),
         },
         "tasks": {

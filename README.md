@@ -159,6 +159,9 @@ npm run readiness
 
 # 检查线上后端上线准备度
 npm run readiness -- https://gujing-api.onrender.com
+
+# 对比线上部署环境、数据库、Tushare 和每日补全任务
+npm run deploy:check -- https://gujing-api.onrender.com
 ```
 
 ## iOS 真机运行
@@ -205,6 +208,7 @@ Render 部署后建议先检查：
 
 ```bash
 npm run readiness -- https://你的后端域名
+npm run deploy:check -- https://你的后端域名
 ```
 
 上线前重点确认：
@@ -212,10 +216,14 @@ npm run readiness -- https://你的后端域名
 - 线上数据库是 PostgreSQL，而不是 SQLite。
 - `APP_ENV=production`
 - `DATABASE_URL` 已生效。
+- `TUSHARE_TOKEN` 已配置；如果 token 权限不足，历史 K 线继续走免费源兜底。
+- `/api/data/backfill/daily` 可访问，后台任务包含 `daily_data_backfill`。
 - `CORS_ORIGINS` 包含 iOS WebView 和正式前端来源。
 - `VITE_API_BASE_URL` 指向 HTTPS 后端。
 - `PRIVACY_POLICY_URL` 是公开 HTTPS 地址。
 - 短信服务商不再使用 mock。
+
+如果 `deploy:check` 显示线上仍是 SQLite、股票目录只有少量种子数据，或每日补全接口返回 404，优先在 Render 里重新部署最新 `main` 分支，并确认 Blueprint 或环境变量已经把 `DATABASE_URL` 和 `TUSHARE_TOKEN` 注入到 `gujing-api` 服务。
 
 ## 上线前剩余工作
 
