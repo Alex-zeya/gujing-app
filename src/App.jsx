@@ -1400,6 +1400,7 @@ function App() {
     setHasAnalyzed(true)
     setAnalysisFocusToken((current) => current + 1)
     void hydrateStockForAnalysis(clean)
+    void recordRecommendationFeedback(clean, 'analyze', 'search')
     setSearchSuggestions([])
     setIsSearchFocused(false)
     setRecentSearches((current) => {
@@ -1949,7 +1950,7 @@ function App() {
       await apiJson('/api/data/backfill/daily', {
         method: 'POST',
         timeoutMs: 60000,
-        body: JSON.stringify({ limit: 5, force: false }),
+        body: JSON.stringify({ limit: 20, force: false }),
       })
       const [stockList, recommendations, providerStatus, taskData, monitor] = await Promise.all([
         apiJson('/api/stocks'),
@@ -5442,6 +5443,13 @@ function WatchView({
                   <strong>{dataStatus.dailyBackfill.syncedCount ?? 0} 只</strong>
                 </div>
                 <p>{dataStatus.dailyBackfill.message}</p>
+                {dataStatus.dailyBackfill.scope && (
+                  <p>
+                    持仓 {dataStatus.dailyBackfill.scope.portfolioCount ?? 0} 只，
+                    观察 {dataStatus.dailyBackfill.scope.watchlistCount ?? 0} 只，
+                    最近分析 {dataStatus.dailyBackfill.scope.recentResearchCount ?? 0} 只
+                  </p>
+                )}
                 <em>最近：{dataStatus.dailyBackfill.lastRefresh}</em>
               </div>
             )}

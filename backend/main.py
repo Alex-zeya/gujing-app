@@ -5614,6 +5614,21 @@ def daily_backfill_target_codes(limit: int | None = None) -> list[str]:
     return (stale_first + fresh_later)[:max_items]
 
 
+def daily_backfill_scope(limit: int | None = None) -> dict[str, Any]:
+    portfolio_codes = list_portfolio_codes()
+    watchlist_codes = list_watchlist_codes()
+    recent_codes = recent_research_codes(40)
+    target_codes = daily_backfill_target_codes(limit)
+    return {
+        "targetCodes": target_codes,
+        "portfolioCount": len(portfolio_codes),
+        "watchlistCount": len(watchlist_codes),
+        "recentResearchCount": len(recent_codes),
+        "curatedCount": len(list_curated_stocks()),
+        "message": "优先补全持仓、观察池和最近分析过的股票。",
+    }
+
+
 def backfill_one_stock(code: str, force: bool = False) -> dict[str, Any]:
     clean = clean_code(code)
     ensure_stock_record(clean)
@@ -5669,7 +5684,8 @@ def backfill_one_stock(code: str, force: bool = False) -> dict[str, Any]:
 
 
 def sync_daily_data_backfill(limit: int | None = None, force: bool = False) -> dict[str, Any]:
-    target_codes = daily_backfill_target_codes(limit)
+    scope = daily_backfill_scope(limit)
+    target_codes = scope["targetCodes"]
     refreshed: list[dict[str, Any]] = []
     errors: list[str] = []
     small_batch_limit = len(target_codes) if limit is not None else None
@@ -5707,6 +5723,7 @@ def sync_daily_data_backfill(limit: int | None = None, force: bool = False) -> d
         },
         "refreshedCodes": [item["code"] for item in refreshed],
         "sample": refreshed[:8],
+        "scope": scope,
         "directory": directory_status,
         "market": market_status,
         "freeFundamentals": fundamentals_status,

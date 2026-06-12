@@ -838,6 +838,7 @@ class PortfolioFlowTest(unittest.TestCase):
             "ensure_market_universe": self.backend.ensure_market_universe,
             "sync_free_fundamentals": self.backend.sync_free_fundamentals,
             "daily_backfill_target_codes": self.backend.daily_backfill_target_codes,
+            "daily_backfill_scope": self.backend.daily_backfill_scope,
             "backfill_one_stock": self.backend.backfill_one_stock,
         }
 
@@ -846,6 +847,14 @@ class PortfolioFlowTest(unittest.TestCase):
             self.backend.ensure_market_universe = lambda: {"mode": "live", "universeCount": 2}
             self.backend.sync_free_fundamentals = lambda limit=None: {"mode": "live", "syncedCount": 2}
             self.backend.daily_backfill_target_codes = lambda limit=None: ["000001"]
+            self.backend.daily_backfill_scope = lambda limit=None: {
+                "targetCodes": ["000001"],
+                "portfolioCount": 1,
+                "watchlistCount": 1,
+                "recentResearchCount": 1,
+                "curatedCount": 3,
+                "message": "优先补全持仓、观察池和最近分析过的股票。",
+            }
             self.backend.backfill_one_stock = lambda code, force=False: {
                 "code": code,
                 "name": "平安银行",
@@ -865,8 +874,17 @@ class PortfolioFlowTest(unittest.TestCase):
 
         self.assertEqual(status["mode"], "live")
         self.assertEqual(status["syncedCount"], 1)
+        self.assertEqual(status["scope"]["recentResearchCount"], 1)
         self.assertEqual(status["coverage"]["history"]["ratio"], 100)
         self.assertEqual(provider_status["dailyBackfill"]["syncedCount"], 1)
+
+    def test_recent_analysis_is_prioritized_for_daily_backfill(self):
+        self.backend.record_recommendation_feedback("601727", "analyze", "search")
+
+        scope = self.backend.daily_backfill_scope(limit=12)
+
+        self.assertIn("601727", scope["targetCodes"])
+        self.assertGreaterEqual(scope["recentResearchCount"], 1)
 
     def test_postgres_sql_translation_keeps_existing_queries_portable(self):
         ignore_sql = self.backend.translate_sql_for_postgres(
