@@ -37,7 +37,7 @@ Apple 登录上线前需要：
 1. Apple Developer 账号里给 App Identifier 开启 `Sign in with Apple`。
 2. Xcode 给 target 增加 `Sign in with Apple` capability。
 3. Render 设置 `APPLE_SIGN_IN_CLIENT_ID` 和 `APPLE_BUNDLE_ID`，一般都是 iOS Bundle ID：`com.zeyawang.gujing`。
-4. iOS 原生层拿到 Apple `identityToken` 后传给 `POST /api/auth/apple/login`。
+4. iOS App 已内置 `GujingAppleSignIn` 原生桥接，会把 Apple `identityToken` 传给 `POST /api/auth/apple/login`。
 
 微信登录上线前需要：
 

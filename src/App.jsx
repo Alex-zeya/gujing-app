@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Capacitor, registerPlugin } from '@capacitor/core'
 import {
   AlertTriangle,
   BarChart3,
@@ -19,6 +20,12 @@ import {
   UserRound,
 } from 'lucide-react'
 import './App.css'
+
+const GujingAppleSignIn = registerPlugin('GujingAppleSignIn')
+
+function isNativeIosApp() {
+  return Capacitor.getPlatform?.() === 'ios' && Capacitor.isNativePlatform?.()
+}
 
 let stocks = {
   '600519': {
@@ -1757,20 +1764,33 @@ function App() {
 
   async function loginWithApple() {
     try {
+      if (!isNativeIosApp()) {
+        setAuthNotice('Apple 登录需要在 iPhone App 里使用；网页预览只展示上线入口。')
+        throw new Error('Apple native login unavailable in web preview')
+      }
+
+      const appleCredential = await GujingAppleSignIn.signIn()
+      if (!appleCredential?.identityToken) {
+        throw new Error('Apple 登录未返回 identity token')
+      }
+
       const result = await apiJson('/api/auth/apple/login', {
         method: 'POST',
         skipAuth: true,
-        body: JSON.stringify({
-          identityToken: 'apple_identity_token_placeholder',
-          authorizationCode: 'apple_authorization_code_placeholder',
-        }),
+        body: JSON.stringify(appleCredential),
       })
       return finishLogin(result, 'Apple 登录成功')
     } catch (error) {
       const message = String(error?.message ?? '')
-      setAuthNotice(message.includes('501')
-        ? 'Apple 登录需要先在 Apple Developer 开启 Sign in with Apple，并接入 iOS 原生授权。'
-        : 'Apple 登录暂时不可用，请稍后再试。')
+      if (message.includes('web preview')) {
+        setAuthNotice('Apple 登录需要在 iPhone App 里使用；网页预览只展示上线入口。')
+      } else if (message.includes('已取消')) {
+        setAuthNotice('已取消 Apple 登录。')
+      } else {
+        setAuthNotice(message.includes('501')
+          ? 'Apple 登录需要先在 Apple Developer 和 Xcode 开启 Sign in with Apple。'
+          : 'Apple 登录暂时不可用，请稍后再试。')
+      }
       throw error
     }
   }
@@ -4943,9 +4963,13 @@ function AuthPanel({
       const message = String(error?.message ?? '')
       if (message.includes('timed out')) {
         setLocalNotice('登录连接超时，请确认手机和电脑在同一个 Wi-Fi')
+      } else if (message.includes('web preview')) {
+        setLocalNotice('Apple 登录需要在 iPhone App 里使用；网页预览只展示上线入口。')
+      } else if (message.includes('已取消')) {
+        setLocalNotice('已取消 Apple 登录。')
       } else {
         setLocalNotice(provider === 'apple'
-          ? 'Apple 登录需要先接入 iOS 原生授权。'
+          ? 'Apple 登录需要先在 Apple Developer 和 Xcode 开启 Sign in with Apple。'
           : '微信登录需要先完成微信开放平台配置。')
       }
     } finally {

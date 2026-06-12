@@ -1,5 +1,6 @@
 import UIKit
 import Capacitor
+import AuthenticationServices
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -46,4 +47,99 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
     }
 
+}
+
+@objc(GujingBridgeViewController)
+class GujingBridgeViewController: CAPBridgeViewController {
+    override open func capacitorDidLoad() {
+        super.capacitorDidLoad()
+        bridge?.registerPluginInstance(GujingAppleSignInPlugin())
+    }
+}
+
+@objc(GujingAppleSignInPlugin)
+class GujingAppleSignInPlugin: CAPPlugin, CAPBridgedPlugin, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
+    let identifier = "GujingAppleSignInPlugin"
+    let jsName = "GujingAppleSignIn"
+    let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "signIn", returnType: CAPPluginReturnPromise)
+    ]
+
+    private var activeCall: CAPPluginCall?
+
+    @objc func signIn(_ call: CAPPluginCall) {
+        guard activeCall == nil else {
+            call.reject("Apple 登录正在进行中")
+            return
+        }
+
+        guard #available(iOS 13.0, *) else {
+            call.reject("当前 iOS 版本不支持 Apple 登录")
+            return
+        }
+
+        activeCall = call
+        let provider = ASAuthorizationAppleIDProvider()
+        let request = provider.createRequest()
+        request.requestedScopes = [.fullName, .email]
+
+        let controller = ASAuthorizationController(authorizationRequests: [request])
+        controller.delegate = self
+        controller.presentationContextProvider = self
+        DispatchQueue.main.async {
+            controller.performRequests()
+        }
+    }
+
+    @available(iOS 13.0, *)
+    func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization) {
+        guard let call = activeCall else {
+            return
+        }
+        activeCall = nil
+
+        guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else {
+            call.reject("Apple 登录凭证无效")
+            return
+        }
+
+        guard let tokenData = credential.identityToken,
+              let identityToken = String(data: tokenData, encoding: .utf8) else {
+            call.reject("Apple 登录未返回 identity token")
+            return
+        }
+
+        let authorizationCode = credential.authorizationCode.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        let fullName = [credential.fullName?.givenName, credential.fullName?.familyName]
+            .compactMap { $0 }
+            .joined(separator: " ")
+
+        call.resolve([
+            "identityToken": identityToken,
+            "authorizationCode": authorizationCode,
+            "userIdentifier": credential.user,
+            "email": credential.email ?? "",
+            "fullName": fullName
+        ])
+    }
+
+    @available(iOS 13.0, *)
+    func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
+        guard let call = activeCall else {
+            return
+        }
+        activeCall = nil
+
+        if let authError = error as? ASAuthorizationError, authError.code == .canceled {
+            call.reject("Apple 登录已取消")
+            return
+        }
+
+        call.reject("Apple 登录失败：\(error.localizedDescription)")
+    }
+
+    @available(iOS 13.0, *)
+    func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
+        return bridge?.viewController?.view.window ?? ASPresentationAnchor()
+    }
 }
