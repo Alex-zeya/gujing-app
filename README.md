@@ -138,8 +138,10 @@ npm run dev
 - Web App：http://localhost:5173
 - 隐私政策草案：http://localhost:5173/privacy.html
 - 支持中心草案：http://localhost:5173/support.html
+- 用户协议草案：http://localhost:5173/terms.html
 - 线上隐私政策：https://gujing-api.onrender.com/privacy.html
 - 线上支持中心：https://gujing-api.onrender.com/support.html
+- 线上用户协议：https://gujing-api.onrender.com/terms.html
 
 ## 常用命令
 

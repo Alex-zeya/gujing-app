@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>股镜用户协议</title>
+    <style>
+      :root {
+        --bg: oklch(0.985 0.002 260);
+        --surface: oklch(1 0 0);
+        --ink: oklch(0.16 0.018 260);
+        --muted: oklch(0.42 0.024 260);
+        --primary: oklch(0.34 0.118 255);
+        --primary-soft: oklch(0.93 0.028 255);
+        --border: oklch(0.885 0.008 260);
+        --danger: oklch(0.5 0.16 28);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+        line-height: 1.7;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      main {
+        width: min(100%, 780px);
+        margin: 0 auto;
+        padding: 48px 18px 72px;
+      }
+
+      header,
+      section {
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: var(--surface);
+      }
+
+      header {
+        padding: 24px;
+        background: linear-gradient(180deg, oklch(0.97 0.015 255), var(--surface));
+      }
+
+      section {
+        margin-top: 16px;
+        padding: 22px;
+      }
+
+      .brand {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 20px;
+      }
+
+      .mark {
+        display: grid;
+        width: 48px;
+        height: 48px;
+        place-items: center;
+        border-radius: 14px;
+        background: oklch(0.12 0.018 260);
+        color: white;
+        font-size: 24px;
+        font-weight: 900;
+      }
+
+      h1,
+      h2,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        margin-bottom: 8px;
+        font-size: clamp(32px, 6vw, 48px);
+        line-height: 1.1;
+      }
+
+      h2 {
+        margin-bottom: 12px;
+        font-size: 22px;
+        line-height: 1.25;
+      }
+
+      ul {
+        margin: 0;
+        padding-left: 1.2em;
+      }
+
+      li + li {
+        margin-top: 8px;
+      }
+
+      a {
+        color: var(--primary);
+        font-weight: 850;
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      .caption,
+      .summary,
+      footer {
+        color: var(--muted);
+      }
+
+      .caption {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .summary {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 720;
+      }
+
+      .notice {
+        border-color: oklch(0.78 0.06 28);
+        background: oklch(0.985 0.008 28);
+      }
+
+      .notice strong {
+        color: var(--danger);
+      }
+
+      footer {
+        margin-top: 24px;
+        font-size: 13px;
+      }
+
+      @media (max-width: 560px) {
+        main {
+          padding-top: 28px;
+        }
+
+        header,
+        section {
+          border-radius: 12px;
+          padding: 18px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="brand">
+          <div class="mark" aria-hidden="true">股</div>
+          <div>
+            <p class="caption">股票研究辅助</p>
+            <strong>股镜</strong>
+          </div>
+        </div>
+        <h1>用户协议</h1>
+        <p class="summary">
+          本协议说明用户使用股镜时的基本规则、服务边界、账户数据管理和风险提示。
+        </p>
+      </header>
+
+      <section>
+        <h2>一、服务内容</h2>
+        <ul>
+          <li>股镜提供 A 股股票搜索、行情整理、K 线查看、持仓记录、观察池和组合风险提示。</li>
+          <li>股镜可能根据公开数据、缓存数据和用户主动填写的信息生成研究辅助内容。</li>
+          <li>股镜会持续优化数据源和功能体验，部分功能可能处于测试阶段。</li>
+        </ul>
+      </section>
+
+      <section class="notice">
+        <h2>二、投资风险</h2>
+        <p>
+          <strong>股镜不提供证券投资咨询、交易撮合、自动下单或代客理财服务。</strong>
+          App 内的分析、评分、预测、提醒和持仓建议仅用于信息整理和风险观察，不构成买卖建议，也不承诺收益。
+          用户应独立判断并自行承担投资风险。
+        </p>
+      </section>
+
+      <section>
+        <h2>三、账户和数据</h2>
+        <ul>
+          <li>用户可使用手机号验证码登录。微信登录会在开放平台审核和配置完成后启用。</li>
+          <li>用户应保证填写的持仓、金额、股数和成本价真实、准确，否则相关计算和提示可能不准确。</li>
+          <li>用户可以在 App 内删除账户和相关数据，也可以通过邮箱 gujingapp@163.com 联系处理。</li>
+          <li>更多数据处理说明见 <a href="/privacy.html">隐私政策</a>。</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>四、禁止行为</h2>
+        <ul>
+          <li>不得利用股镜从事违法违规证券活动、虚假宣传、荐股收费或扰乱市场秩序的行为。</li>
+          <li>不得攻击、爬取、干扰股镜服务，或绕过登录、风控、频率限制等安全措施。</li>
+          <li>不得冒用他人身份或提交不真实的账户、持仓和反馈信息。</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>五、知识产权</h2>
+        <p>
+          股镜的页面设计、产品名称、文案、图标和自研代码由股镜项目维护者保留相应权利。
+          第三方开源项目、数据接口和平台服务遵循其各自许可协议和服务条款。
+        </p>
+      </section>
+
+      <section>
+        <h2>六、联系我们</h2>
+        <p>
+          如对本协议、产品使用、账户数据或隐私处理有疑问，请发送邮件至 gujingapp@163.com。
+          维护者：股镜项目维护者 Alex-w。
+        </p>
+      </section>
+
+      <footer>
+        <p>更新日期：2026 年 6 月 12 日。© 2026 股镜 Gujing。联系方式：gujingapp@163.com。</p>
+      </footer>
+    </main>
+  </body>
+</html>

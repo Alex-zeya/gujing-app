@@ -6316,6 +6316,11 @@ def support_page() -> FileResponse:
     return public_page_response("support.html")
 
 
+@app.get("/terms.html", include_in_schema=False)
+def terms_page() -> FileResponse:
+    return public_page_response("terms.html")
+
+
 @app.get("/api/system/readiness")
 def system_readiness_index() -> dict[str, Any]:
     return system_readiness_payload()

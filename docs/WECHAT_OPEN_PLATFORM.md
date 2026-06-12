@@ -23,6 +23,7 @@
 | 移动应用简介 | 股镜是一款面向个人投资者的 A 股研究辅助工具，帮助用户整理行情、K 线、观察池、持仓和组合风险提示。 |
 | 英文简介 | Gujing helps individual investors organize A-share market data, watchlists, holdings, K-line charts, and portfolio risk insights. |
 | 应用官网 | `https://gujing-api.onrender.com/support.html` |
+| 联系邮箱 | `gujingapp@163.com` |
 | Bundle ID | `com.zeyawang.gujing` |
 | Universal Links | `https://gujing-api.onrender.com/app/` |
 | 应用类目 | 工具-信息查询 |
@@ -35,7 +36,8 @@
 ```text
 股镜用于个人股票研究和风险观察，不提供证券交易、不代客理财、不承诺收益。
 微信登录仅用于账户创建和同步用户主动保存的持仓、观察池、提醒规则和风险偏好。
-应用当前处于内测阶段，计划先完成 iOS TestFlight 和 App Store 审核。
+应用官网已补充产品介绍、用户协议、隐私政策、版权维护者、联系方式和备案说明。
+联系方式：gujingapp@163.com。
 ```
 
 ## 需要上传的图片
