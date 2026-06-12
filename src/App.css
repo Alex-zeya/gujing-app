@@ -3580,6 +3580,50 @@
   line-height: 1.45;
 }
 
+.analysis-quick-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.analysis-quick-summary div {
+  min-height: 58px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 10px;
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  background: var(--surface-soft);
+}
+
+.analysis-quick-summary span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.analysis-quick-summary strong {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.analysis-quick-summary strong.is-up {
+  color: var(--rise);
+}
+
+.analysis-quick-summary strong.is-down {
+  color: var(--fall);
+}
+
+.analysis-quick-summary strong.is-pending {
+  color: var(--muted);
+}
+
 .analysis-disclosure {
   display: grid;
   gap: 8px;

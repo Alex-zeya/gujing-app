@@ -2585,6 +2585,11 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
   const fundamentalProfile = analysisScore.fundamentalProfile ?? researchFramework?.fundamentalProfile
   const compliance = analysisScore.compliance
   const newsImpact = stock.newsImpact
+  const summaryPoints = [
+    { label: '结论', value: decision.holdingAdvice },
+    { label: '趋势', value: decision.hasHistory ? formatPercent(monthMove) : missingLabel('history'), tone: decision.hasHistory ? trendClass(monthMove) : 'is-pending' },
+    { label: '数据', value: dataQuality?.label ?? '检查中' },
+  ]
 
   return (
     <section className="panel decision-panel">
@@ -2635,12 +2640,21 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
           <span>综合判断</span>
           <strong>{analysisScore.total}</strong>
         </div>
-          <p>{normalizeDataCopy(`${analysisScore.stance}：${analysisScore.reasons.join('，')}`)}</p>
+          <p>{normalizeDataCopy(`${analysisScore.stance}：${analysisScore.reasons.slice(0, 2).join('，')}`)}</p>
       </div>
 
       <div className="decision-copy">
         <span>未来走势</span>
           <p>{normalizeDataCopy(decision.trendView)}</p>
+      </div>
+
+      <div className="analysis-quick-summary" aria-label="分析快速结论">
+        {summaryPoints.map((item) => (
+          <div key={item.label}>
+            <span>{item.label}</span>
+            <strong className={item.tone ?? ''}>{item.value}</strong>
+          </div>
+        ))}
       </div>
 
       <details className="analysis-disclosure analysis-more">
