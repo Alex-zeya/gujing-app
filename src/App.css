@@ -5485,6 +5485,47 @@
   line-height: 1.45;
 }
 
+.ops-service-matrix {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ops-service-matrix div {
+  min-height: 76px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  display: grid;
+  align-content: space-between;
+  gap: 5px;
+  background: var(--surface-soft);
+}
+
+.ops-service-matrix span,
+.ops-service-matrix em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.ops-service-matrix strong {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 930;
+  line-height: 1;
+}
+
+.ops-service-matrix strong.is-ok {
+  color: var(--market-up);
+}
+
+.ops-service-matrix strong.is-warn {
+  color: oklch(0.56 0.12 60);
+}
+
 .task-error-list {
   display: grid;
   gap: 8px;

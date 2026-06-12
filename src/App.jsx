@@ -4723,6 +4723,11 @@ function OperationalMonitorCard({ systemMonitor, systemStatus }) {
   const taskSignal = systemMonitor?.signals?.tasks
   const errorSignal = systemMonitor?.signals?.errors
   const databaseSignal = systemMonitor?.signals?.database ?? systemStatus?.checks?.database
+  const stockDirectorySignal = systemStatus?.checks?.stockDirectory
+  const dailyBackfillSignal = systemStatus?.checks?.dailyBackfill
+  const authSignals = systemMonitor?.signals?.auth ?? {}
+  const deploymentSignal = systemStatus?.checks?.deployment
+  const tushareSignal = systemStatus?.checks?.tushare
   const uptime = formatDuration(systemMonitor?.environment?.uptimeSeconds)
   const monitorRows = [
     {
@@ -4746,6 +4751,38 @@ function OperationalMonitorCard({ systemMonitor, systemStatus }) {
       label: '错误日志',
       ok: errorSignal?.ok ?? systemStatus?.checks?.errors?.ok,
       value: errorSignal?.recentCount ? `${errorSignal.recentCount} 条` : '无近期错误',
+    },
+  ]
+  const serviceRows = [
+    {
+      label: '生产数据库',
+      ok: databaseSignal?.ok,
+      value: systemMonitor?.environment?.database ?? databaseSignal?.mode ?? '待检查',
+    },
+    {
+      label: 'A股目录',
+      ok: stockDirectorySignal?.ok,
+      value: stockDirectorySignal?.count ? `${stockDirectorySignal.count} 只` : '同步中',
+    },
+    {
+      label: '每日补全',
+      ok: dailyBackfillSignal?.ok,
+      value: dailyBackfillSignal?.lastRefresh ? `最近 ${dailyBackfillSignal.lastRefresh}` : '等待运行',
+    },
+    {
+      label: '登录配置',
+      ok: Boolean(authSignals.appleLogin?.ok || authSignals.wechat?.ok),
+      value: authSignals.wechat?.ok ? '微信已配置' : authSignals.appleLogin?.ok ? 'Apple 已配置' : '待配置',
+    },
+    {
+      label: 'K线增强',
+      ok: tushareSignal?.ok,
+      value: tushareSignal?.ok ? 'Token 已配置' : '免费源兜底',
+    },
+    {
+      label: '线上地址',
+      ok: deploymentSignal?.ok,
+      value: deploymentSignal?.serviceUrl ? 'HTTPS' : '本地/待部署',
     },
   ]
 
@@ -4802,6 +4839,15 @@ function OperationalMonitorCard({ systemMonitor, systemStatus }) {
           <div key={row.label}>
             <span>{row.label}</span>
             <strong className={row.ok ? 'is-ok' : 'is-warn'}>{row.ok ? '正常' : '检查'}</strong>
+            <em>{row.value}</em>
+          </div>
+        ))}
+      </div>
+      <div className="ops-service-matrix">
+        {serviceRows.map((row) => (
+          <div key={row.label}>
+            <span>{row.label}</span>
+            <strong className={row.ok ? 'is-ok' : 'is-warn'}>{row.ok ? 'OK' : '待处理'}</strong>
             <em>{row.value}</em>
           </div>
         ))}
