@@ -488,6 +488,23 @@ class PortfolioFlowTest(unittest.TestCase):
         self.assertEqual(matches[0]["code"], "123456")
         self.assertEqual(matches[0]["name"], "未来电气")
 
+        q_matches = self.backend.stocks_search(q="未来")
+        self.assertTrue(any(match["code"] == "123456" for match in q_matches))
+
+    def test_stock_search_is_fast_by_default_without_quote_refresh(self):
+        original_refresh = self.backend.refresh_cached_quotes
+
+        def fail_refresh(*args, **kwargs):
+            raise AssertionError("keyword search should not block on quote refresh by default")
+
+        self.backend.refresh_cached_quotes = fail_refresh
+        try:
+            matches = self.backend.stocks_search("平安")
+        finally:
+            self.backend.refresh_cached_quotes = original_refresh
+
+        self.assertTrue(any(match["code"] == "000001" for match in matches))
+
     def test_mock_sms_returns_dev_code_in_production_mode(self):
         original_env = self.backend.os.environ.get("APP_ENV")
         original_sms_provider = self.backend.SMS_PROVIDER

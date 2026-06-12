@@ -6492,20 +6492,21 @@ def search_result_summary(stock: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.get("/api/stocks/search")
-def stocks_search(keyword: str = "", full: bool = False, with_quotes: bool = True) -> list[dict[str, Any]]:
-    results = search_stocks(keyword)
-    if keyword.strip() and not results:
+def stocks_search(keyword: str = "", q: str = "", full: bool = False, with_quotes: bool = False) -> list[dict[str, Any]]:
+    search_term = (keyword or q).strip()
+    results = search_stocks(search_term)
+    if search_term and not results:
         existing_codes = {stock["code"] for stock in results}
         try:
             results.extend(
-                stock for stock in directory_matches(keyword, 25, allow_network=True) if stock["code"] not in existing_codes
+                stock for stock in directory_matches(search_term, 25, allow_network=True) if stock["code"] not in existing_codes
             )
         except Exception:
             pass
-    if not results and keyword.strip():
+    if not results and search_term:
         try:
             sync_market_universe()
-            results = search_stocks(keyword)
+            results = search_stocks(search_term)
         except Exception:
             results = []
     if with_quotes and results:

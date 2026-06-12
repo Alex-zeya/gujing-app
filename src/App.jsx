@@ -1172,7 +1172,7 @@ function App() {
       setIsSuggesting(true)
       try {
         const backendMatches = await apiJson(
-          `/api/stocks/search?keyword=${encodeURIComponent(keyword)}`,
+          `/api/stocks/search?keyword=${encodeURIComponent(keyword)}&with_quotes=false`,
           { signal: controller.signal },
         )
         if (controller.signal.aborted) return
@@ -1314,7 +1314,7 @@ function App() {
 
     try {
       setIsSuggesting(true)
-      const results = await apiJson(`/api/stocks/search?keyword=${encodeURIComponent(query.trim())}`)
+      const results = await apiJson(`/api/stocks/search?keyword=${encodeURIComponent(query.trim())}&with_quotes=false`)
       const cnResults = results.filter((item) => item.market === 'cn')
       const mergedResults = mergeStockLists(localMatches, cnResults, 8)
       if (mergedResults.length > 1) {
