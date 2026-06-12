@@ -608,7 +608,9 @@ class PostgresCompatConnection:
         return self.connection.execute(translate_sql_for_postgres(sql), params)
 
     def executemany(self, sql: str, params: list[tuple[Any, ...]] | tuple[tuple[Any, ...], ...]) -> Any:
-        return self.connection.executemany(translate_sql_for_postgres(sql), params)
+        cursor = self.connection.cursor()
+        cursor.executemany(translate_sql_for_postgres(sql), params)
+        return cursor
 
     def commit(self) -> None:
         self.connection.commit()

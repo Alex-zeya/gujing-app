@@ -57,6 +57,29 @@ class PortfolioFlowTest(unittest.TestCase):
             )
         ]
 
+    def test_postgres_compat_executemany_uses_cursor(self):
+        class FakeCursor:
+            def __init__(self):
+                self.calls = []
+
+            def executemany(self, sql, params):
+                self.calls.append((sql, params))
+
+        class FakeConnection:
+            def __init__(self):
+                self.cursor_instance = FakeCursor()
+
+            def cursor(self):
+                return self.cursor_instance
+
+        fake = FakeConnection()
+        compat = self.backend.PostgresCompatConnection(fake)
+        cursor = compat.executemany("INSERT INTO sample (a, b) VALUES (?, ?)", [(1, 2)])
+
+        self.assertIs(cursor, fake.cursor_instance)
+        self.assertEqual(cursor.calls[0][0], "INSERT INTO sample (a, b) VALUES (%s, %s)")
+        self.assertEqual(cursor.calls[0][1], [(1, 2)])
+
     def test_buy_adjust_sell_and_remove_records_transactions(self):
         created = self.backend.portfolio_upsert(
             self.backend.PortfolioPayload(
