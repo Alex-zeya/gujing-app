@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
+import hmac
 import json
 import os
 import re
 import sqlite3
 import time
 import secrets
+import urllib.parse
 from contextvars import ContextVar
 from contextlib import asynccontextmanager, contextmanager, suppress
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -145,23 +148,14 @@ SMS_PROVIDER = os.getenv("SMS_PROVIDER", "mock").lower()
 SMS_PROVIDER_CONFIG = {
     "mock": {
         "name": "开发模拟短信",
-        "ready": True,
         "env": [],
     },
     "aliyun": {
         "name": "阿里云短信",
-        "ready": all(
-            os.getenv(key)
-            for key in ("ALIYUN_SMS_ACCESS_KEY_ID", "ALIYUN_SMS_ACCESS_KEY_SECRET", "ALIYUN_SMS_SIGN_NAME", "ALIYUN_SMS_TEMPLATE_CODE")
-        ),
         "env": ["ALIYUN_SMS_ACCESS_KEY_ID", "ALIYUN_SMS_ACCESS_KEY_SECRET", "ALIYUN_SMS_SIGN_NAME", "ALIYUN_SMS_TEMPLATE_CODE"],
     },
     "tencent": {
         "name": "腾讯云短信",
-        "ready": all(
-            os.getenv(key)
-            for key in ("TENCENT_SMS_SECRET_ID", "TENCENT_SMS_SECRET_KEY", "TENCENT_SMS_SDK_APP_ID", "TENCENT_SMS_SIGN_NAME", "TENCENT_SMS_TEMPLATE_ID")
-        ),
         "env": ["TENCENT_SMS_SECRET_ID", "TENCENT_SMS_SECRET_KEY", "TENCENT_SMS_SDK_APP_ID", "TENCENT_SMS_SIGN_NAME", "TENCENT_SMS_TEMPLATE_ID"],
     },
 }
@@ -1008,9 +1002,170 @@ def sms_provider_status() -> dict[str, Any]:
     return {
         "provider": SMS_PROVIDER,
         "name": config["name"],
-        "ready": config["ready"],
+        "ready": SMS_PROVIDER == "mock" or not missing_env,
         "mode": "mock" if SMS_PROVIDER == "mock" else "production",
         "missingEnv": missing_env,
+    }
+
+
+def aliyun_percent_encode(value: Any) -> str:
+    return urllib.parse.quote(str(value), safe="-_.~")
+
+
+def send_aliyun_sms_code(phone: str, code: str) -> dict[str, Any]:
+    access_key_id = os.environ["ALIYUN_SMS_ACCESS_KEY_ID"]
+    access_key_secret = os.environ["ALIYUN_SMS_ACCESS_KEY_SECRET"]
+    sign_name = os.environ["ALIYUN_SMS_SIGN_NAME"]
+    template_code = os.environ["ALIYUN_SMS_TEMPLATE_CODE"]
+    endpoint = os.getenv("ALIYUN_SMS_ENDPOINT", "https://dysmsapi.aliyuncs.com/")
+    template_param_name = os.getenv("ALIYUN_SMS_TEMPLATE_PARAM_NAME", "code")
+    template_params = {template_param_name: code}
+    if os.getenv("ALIYUN_SMS_TEMPLATE_INCLUDE_MINUTES", "false").lower() in {"1", "true", "yes"}:
+        template_params[os.getenv("ALIYUN_SMS_TEMPLATE_MINUTES_PARAM_NAME", "minutes")] = str(SMS_CODE_EXPIRE_MINUTES)
+
+    params = {
+        "Action": "SendSms",
+        "Version": "2017-05-25",
+        "RegionId": os.getenv("ALIYUN_SMS_REGION_ID", "cn-hangzhou"),
+        "Format": "JSON",
+        "AccessKeyId": access_key_id,
+        "SignatureMethod": "HMAC-SHA1",
+        "SignatureVersion": "1.0",
+        "SignatureNonce": secrets.token_urlsafe(18),
+        "Timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "PhoneNumbers": phone,
+        "SignName": sign_name,
+        "TemplateCode": template_code,
+        "TemplateParam": json.dumps(template_params, ensure_ascii=False, separators=(",", ":")),
+    }
+    canonical = "&".join(
+        f"{aliyun_percent_encode(key)}={aliyun_percent_encode(params[key])}"
+        for key in sorted(params)
+    )
+    string_to_sign = f"GET&%2F&{aliyun_percent_encode(canonical)}"
+    signature = base64.b64encode(
+        hmac.new(
+            f"{access_key_secret}&".encode("utf-8"),
+            string_to_sign.encode("utf-8"),
+            hashlib.sha1,
+        ).digest()
+    ).decode("utf-8")
+    response = requests.get(endpoint, params={**params, "Signature": signature}, timeout=12)
+    response.raise_for_status()
+    payload = response.json()
+    if payload.get("Code") != "OK":
+        raise HTTPException(
+            status_code=502,
+            detail=f"阿里云短信发送失败：{payload.get('Code') or 'UNKNOWN'} {payload.get('Message') or ''}".strip(),
+        )
+    return {
+        "provider": "aliyun",
+        "sent": True,
+        "message": f"阿里云短信已提交：{payload.get('BizId') or payload.get('RequestId') or 'OK'}",
+    }
+
+
+def tencent_phone_number(phone: str) -> str:
+    return phone if phone.startswith("+") else f"+86{phone}"
+
+
+def tencent_sms_template_params(code: str) -> list[str]:
+    raw = os.getenv("TENCENT_SMS_TEMPLATE_PARAM_SET", "code,minutes")
+    values = {
+        "code": code,
+        "minutes": str(SMS_CODE_EXPIRE_MINUTES),
+    }
+    params = []
+    for item in [part.strip() for part in raw.split(",") if part.strip()]:
+        params.append(values.get(item, item.format(code=code, minutes=SMS_CODE_EXPIRE_MINUTES)))
+    return params or [code]
+
+
+def tencent_tc3_signature(secret_key: str, date: str, service: str, string_to_sign: str) -> str:
+    def sign(key: bytes, message: str) -> bytes:
+        return hmac.new(key, message.encode("utf-8"), hashlib.sha256).digest()
+
+    secret_date = sign(("TC3" + secret_key).encode("utf-8"), date)
+    secret_service = sign(secret_date, service)
+    secret_signing = sign(secret_service, "tc3_request")
+    return hmac.new(secret_signing, string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def send_tencent_sms_code(phone: str, code: str) -> dict[str, Any]:
+    secret_id = os.environ["TENCENT_SMS_SECRET_ID"]
+    secret_key = os.environ["TENCENT_SMS_SECRET_KEY"]
+    sdk_app_id = os.environ["TENCENT_SMS_SDK_APP_ID"]
+    sign_name = os.environ["TENCENT_SMS_SIGN_NAME"]
+    template_id = os.environ["TENCENT_SMS_TEMPLATE_ID"]
+    host = os.getenv("TENCENT_SMS_ENDPOINT", "sms.tencentcloudapi.com")
+    region = os.getenv("TENCENT_SMS_REGION", "ap-guangzhou")
+    service = "sms"
+    action = "SendSms"
+    version = "2021-01-11"
+    timestamp = int(time.time())
+    date = datetime.fromtimestamp(timestamp, timezone.utc).strftime("%Y-%m-%d")
+    payload = {
+        "PhoneNumberSet": [tencent_phone_number(phone)],
+        "SmsSdkAppId": sdk_app_id,
+        "SignName": sign_name,
+        "TemplateId": template_id,
+        "TemplateParamSet": tencent_sms_template_params(code),
+    }
+    body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    hashed_request_payload = hashlib.sha256(body.encode("utf-8")).hexdigest()
+    content_type = "application/json; charset=utf-8"
+    canonical_headers = f"content-type:{content_type}\nhost:{host}\n"
+    signed_headers = "content-type;host"
+    canonical_request = "\n".join([
+        "POST",
+        "/",
+        "",
+        canonical_headers,
+        signed_headers,
+        hashed_request_payload,
+    ])
+    credential_scope = f"{date}/{service}/tc3_request"
+    string_to_sign = "\n".join([
+        "TC3-HMAC-SHA256",
+        str(timestamp),
+        credential_scope,
+        hashlib.sha256(canonical_request.encode("utf-8")).hexdigest(),
+    ])
+    signature = tencent_tc3_signature(secret_key, date, service, string_to_sign)
+    authorization = (
+        f"TC3-HMAC-SHA256 Credential={secret_id}/{credential_scope}, "
+        f"SignedHeaders={signed_headers}, Signature={signature}"
+    )
+    response = requests.post(
+        f"https://{host}",
+        data=body.encode("utf-8"),
+        headers={
+            "Authorization": authorization,
+            "Content-Type": content_type,
+            "Host": host,
+            "X-TC-Action": action,
+            "X-TC-Version": version,
+            "X-TC-Timestamp": str(timestamp),
+            "X-TC-Region": region,
+        },
+        timeout=12,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if payload.get("Response", {}).get("Error"):
+        error = payload["Response"]["Error"]
+        raise HTTPException(status_code=502, detail=f"腾讯云短信发送失败：{error.get('Code')} {error.get('Message')}")
+    status_set = payload.get("Response", {}).get("SendStatusSet") or []
+    first_status = status_set[0] if status_set else {}
+    if first_status.get("Code") not in {"Ok", "OK", "Success"}:
+        raise HTTPException(
+            status_code=502,
+            detail=f"腾讯云短信发送失败：{first_status.get('Code') or 'UNKNOWN'} {first_status.get('Message') or ''}".strip(),
+        )
+    return {
+        "provider": "tencent",
+        "sent": True,
+        "message": f"腾讯云短信已提交：{first_status.get('SerialNo') or payload.get('Response', {}).get('RequestId') or 'OK'}",
     }
 
 
@@ -1028,12 +1183,11 @@ def send_sms_code(phone: str, code: str) -> dict[str, Any]:
             detail=f"短信服务 {status['name']} 尚未配置完整：{', '.join(status['missingEnv'])}",
         )
 
-    # Real provider SDK calls are intentionally isolated here. Once credentials
-    # are ready, this function can call Aliyun/Tencent SDK without touching login APIs.
-    raise HTTPException(
-        status_code=501,
-        detail=f"{status['name']} SDK 调用尚未接入，当前只完成配置校验和接口结构。",
-    )
+    if SMS_PROVIDER == "aliyun":
+        return send_aliyun_sms_code(phone, code)
+    if SMS_PROVIDER == "tencent":
+        return send_tencent_sms_code(phone, code)
+    raise HTTPException(status_code=503, detail=f"不支持的短信服务：{SMS_PROVIDER}")
 
 
 def normalize_user_profile(row: sqlite3.Row | None = None) -> dict[str, Any]:

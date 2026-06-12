@@ -102,6 +102,13 @@ export ALIYUN_SMS_SIGN_NAME="..."
 export ALIYUN_SMS_TEMPLATE_CODE="..."
 ```
 
+默认模板参数名是 `${code}`。如果阿里云短信模板还包含有效期分钟数，可以额外配置：
+
+```bash
+export ALIYUN_SMS_TEMPLATE_INCLUDE_MINUTES=true
+export ALIYUN_SMS_TEMPLATE_MINUTES_PARAM_NAME="minutes"
+```
+
 或：
 
 ```bash
@@ -113,7 +120,13 @@ export TENCENT_SMS_SIGN_NAME="..."
 export TENCENT_SMS_TEMPLATE_ID="..."
 ```
 
-当前后端已经完成 provider 配置校验、发送接口结构和日志记录。真实阿里云/腾讯云 SDK 调用还需要在拿到账号资质后接入。
+腾讯云默认模板参数顺序是验证码、有效期分钟数，也就是 `{1}=code`、`{2}=minutes`。如果模板参数顺序不同，可以配置：
+
+```bash
+export TENCENT_SMS_TEMPLATE_PARAM_SET="code,minutes"
+```
+
+当前后端已经接入阿里云和腾讯云短信 HTTP API，不额外依赖 SDK。正式可用还需要在对应平台完成短信签名、模板审核，并在生产环境填写密钥。
 
 ## 登录设备
 

@@ -26,13 +26,51 @@
 - `PRIVACY_POLICY_URL`：公开 HTTPS 隐私政策地址，App Store 审核需要。
 - `APNS_KEY_ID` / `APNS_TEAM_ID` / `APNS_BUNDLE_ID`：如果首版要做 iOS 系统推送，需要配置 Apple Push Notification 服务。
 
+## 真实短信登录
+
+后端已经支持阿里云和腾讯云短信 HTTP API。上线前建议先保持 `SMS_PROVIDER=mock` 跑完整流程，等短信签名和模板审核通过后再切换真实 provider。
+
+阿里云必填：
+
+```bash
+SMS_PROVIDER=aliyun
+ALIYUN_SMS_ACCESS_KEY_ID=...
+ALIYUN_SMS_ACCESS_KEY_SECRET=...
+ALIYUN_SMS_SIGN_NAME=...
+ALIYUN_SMS_TEMPLATE_CODE=...
+```
+
+阿里云模板默认使用 `${code}`。如果模板还有有效期分钟数，设置：
+
+```bash
+ALIYUN_SMS_TEMPLATE_INCLUDE_MINUTES=true
+ALIYUN_SMS_TEMPLATE_MINUTES_PARAM_NAME=minutes
+```
+
+腾讯云必填：
+
+```bash
+SMS_PROVIDER=tencent
+TENCENT_SMS_SECRET_ID=...
+TENCENT_SMS_SECRET_KEY=...
+TENCENT_SMS_SDK_APP_ID=...
+TENCENT_SMS_SIGN_NAME=...
+TENCENT_SMS_TEMPLATE_ID=...
+```
+
+腾讯云默认模板参数为 `{1}=code`、`{2}=minutes`，如果模板顺序不同，设置：
+
+```bash
+TENCENT_SMS_TEMPLATE_PARAM_SET=code,minutes
+```
+
 ## Render
 
 仓库里已经提供 `render.yaml`，默认使用 Render Free Web Service，适合先把 iPhone 端连到稳定 HTTPS 后端。Render FastAPI 官方文档也支持直接创建 Web Service 并配置 Docker 构建。
 
 注意：
 
-- `render.yaml` 里当前 `SMS_PROVIDER=mock`，只适合测试。
+- `render.yaml` 里当前 `SMS_PROVIDER=mock`，只适合测试；真实登录要在 Render Environment 里改成 `aliyun` 或 `tencent`，并保存、重建、部署。
 - `render.yaml` 已配置 `gujing-db` PostgreSQL，并把连接串注入 `DATABASE_URL`。如果你在 Render 控制台看到 Blueprint 变更，需要点同步/重新部署。
 - Render Free 服务空闲一段时间会休眠，第一次打开可能需要等待几十秒。
 - Render 免费 PostgreSQL 适合测试，有期限和资源限制；正式上线前建议换成付费数据库或外部持久数据库。
@@ -62,7 +100,7 @@ npm run readiness
 ## 上线前必须替换
 
 - 临时 `localtunnel` 地址。
-- 开发模拟短信。
+- 开发模拟短信：正式外测前切到阿里云或腾讯云真实短信，并用自己的手机号完整测试发送、登录、退出、重新登录。
 - 生产 CORS 域名。
 - 免费测试数据库或临时本地文件路径。
 

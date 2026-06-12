@@ -33,6 +33,8 @@ services:
         sync: false
       - key: ALIYUN_SMS_TEMPLATE_CODE
         sync: false
+      - key: ALIYUN_SMS_TEMPLATE_PARAM_NAME
+        value: code
       - key: TENCENT_SMS_SECRET_ID
         sync: false
       - key: TENCENT_SMS_SECRET_KEY
@@ -43,6 +45,10 @@ services:
         sync: false
       - key: TENCENT_SMS_TEMPLATE_ID
         sync: false
+      - key: TENCENT_SMS_REGION
+        value: ap-guangzhou
+      - key: TENCENT_SMS_TEMPLATE_PARAM_SET
+        value: code,minutes
       - key: WECHAT_APP_ID
         sync: false
       - key: WECHAT_APP_SECRET

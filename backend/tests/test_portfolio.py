@@ -881,6 +881,104 @@ class PortfolioFlowTest(unittest.TestCase):
         self.assertTrue(payload["authenticated"])
         self.assertIn("token", payload)
 
+    def test_aliyun_sms_provider_calls_send_api(self):
+        original_provider = self.backend.SMS_PROVIDER
+        captured = {}
+
+        class FakeResponse:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"Code": "OK", "BizId": "biz-test"}
+
+        def fake_get(url, params, timeout):
+            captured["url"] = url
+            captured["params"] = params
+            captured["timeout"] = timeout
+            return FakeResponse()
+
+        original_get = self.backend.requests.get
+        env = {
+            "ALIYUN_SMS_ACCESS_KEY_ID": "test-id",
+            "ALIYUN_SMS_ACCESS_KEY_SECRET": "test-secret",
+            "ALIYUN_SMS_SIGN_NAME": "股镜",
+            "ALIYUN_SMS_TEMPLATE_CODE": "SMS_TEST",
+        }
+        previous_env = {key: self.backend.os.environ.get(key) for key in env}
+        try:
+            self.backend.SMS_PROVIDER = "aliyun"
+            self.backend.os.environ.update(env)
+            self.backend.requests.get = fake_get
+
+            result = self.backend.send_sms_code("15995270070", "654321")
+        finally:
+            self.backend.SMS_PROVIDER = original_provider
+            self.backend.requests.get = original_get
+            for key, value in previous_env.items():
+                if value is None:
+                    self.backend.os.environ.pop(key, None)
+                else:
+                    self.backend.os.environ[key] = value
+
+        self.assertTrue(result["sent"])
+        self.assertEqual(result["provider"], "aliyun")
+        self.assertEqual(captured["params"]["Action"], "SendSms")
+        self.assertEqual(captured["params"]["PhoneNumbers"], "15995270070")
+        self.assertEqual(captured["params"]["TemplateCode"], "SMS_TEST")
+        self.assertIn("Signature", captured["params"])
+        self.assertIn('"code":"654321"', captured["params"]["TemplateParam"])
+
+    def test_tencent_sms_provider_calls_send_api(self):
+        original_provider = self.backend.SMS_PROVIDER
+        captured = {}
+
+        class FakeResponse:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"Response": {"SendStatusSet": [{"Code": "Ok", "SerialNo": "serial-test"}]}}
+
+        def fake_post(url, data, headers, timeout):
+            captured["url"] = url
+            captured["payload"] = self.backend.json.loads(data.decode("utf-8"))
+            captured["headers"] = headers
+            captured["timeout"] = timeout
+            return FakeResponse()
+
+        original_post = self.backend.requests.post
+        env = {
+            "TENCENT_SMS_SECRET_ID": "test-id",
+            "TENCENT_SMS_SECRET_KEY": "test-secret",
+            "TENCENT_SMS_SDK_APP_ID": "1400000000",
+            "TENCENT_SMS_SIGN_NAME": "股镜",
+            "TENCENT_SMS_TEMPLATE_ID": "123456",
+        }
+        previous_env = {key: self.backend.os.environ.get(key) for key in env}
+        try:
+            self.backend.SMS_PROVIDER = "tencent"
+            self.backend.os.environ.update(env)
+            self.backend.requests.post = fake_post
+
+            result = self.backend.send_sms_code("15995270070", "654321")
+        finally:
+            self.backend.SMS_PROVIDER = original_provider
+            self.backend.requests.post = original_post
+            for key, value in previous_env.items():
+                if value is None:
+                    self.backend.os.environ.pop(key, None)
+                else:
+                    self.backend.os.environ[key] = value
+
+        self.assertTrue(result["sent"])
+        self.assertEqual(result["provider"], "tencent")
+        self.assertEqual(captured["url"], "https://sms.tencentcloudapi.com")
+        self.assertEqual(captured["payload"]["PhoneNumberSet"], ["+8615995270070"])
+        self.assertEqual(captured["payload"]["TemplateParamSet"], ["654321", "5"])
+        self.assertIn("TC3-HMAC-SHA256", captured["headers"]["Authorization"])
+        self.assertEqual(captured["headers"]["X-TC-Action"], "SendSms")
+
 
 if __name__ == "__main__":
     unittest.main()
