@@ -5054,15 +5054,6 @@ function AuthPanel({
       </div>
       <div className="auth-provider-list">
         <button
-          className="auth-provider-button is-apple"
-          type="button"
-          disabled={Boolean(activeProvider)}
-          onClick={() => handleProviderLogin('apple')}
-        >
-          <Fingerprint size={19} />
-          <span>{activeProvider === 'apple' ? '正在唤起 Apple 登录' : '使用 Apple 登录'}</span>
-        </button>
-        <button
           className="auth-provider-button is-wechat"
           type="button"
           disabled={Boolean(activeProvider)}
@@ -5071,13 +5062,23 @@ function AuthPanel({
           <MessageCircle size={19} />
           <span>{activeProvider === 'wechat' ? '正在唤起微信登录' : '使用微信登录'}</span>
         </button>
+        <button
+          className="auth-provider-button is-apple"
+          type="button"
+          disabled={Boolean(activeProvider)}
+          onClick={() => handleProviderLogin('apple')}
+        >
+          <Fingerprint size={19} />
+          <span>{activeProvider === 'apple' ? '正在唤起 Apple 登录' : '使用 Apple 登录'}</span>
+        </button>
       </div>
       <p className="auth-helper">
-        首版取消短信验证码，减少资质和短信到达率问题。Apple 登录先保留，微信登录会在开放平台移动应用通过后启用。
+        登录后会同步你的持仓、观察池、提醒规则和风险偏好。手机号验证码已取消，首版只保留微信和 Apple 登录。
       </p>
-      <button className="auth-secondary-link" type="button" onClick={() => setLocalNotice('测试入口已隐藏，正式版只保留 Apple 和微信登录。')}>
-        内测账号说明
-      </button>
+      <div className="auth-status-strip" aria-label="登录配置状态">
+        <span>微信审核中</span>
+        <span>Apple 保留入口</span>
+      </div>
       {(authNotice || localNotice) && <p className="auth-notice">{localNotice || authNotice}</p>}
     </section>
   )

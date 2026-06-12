@@ -5677,6 +5677,27 @@
   line-height: 1.5;
 }
 
+.auth-status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.auth-status-strip span {
+  min-height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1;
+}
+
 .auth-secondary-link {
   min-height: 34px;
   border: 0;

@@ -7384,8 +7384,8 @@ def launch_readiness_payload(checks: dict[str, Any]) -> dict[str, Any]:
             "label": "登录验证",
             "ok": bool(checks.get("appleLogin", {}).get("ok") or checks.get("wechat", {}).get("ok")),
             "required": True,
-            "summary": "正式用户使用 Apple 登录或微信登录，手机号短信仅作为备用能力。",
-            "next": "优先在 Apple Developer 开启 Sign in with Apple；如保留微信按钮，再配置微信开放平台移动应用。",
+            "summary": "正式用户使用 Apple 登录或微信登录，手机号验证码不作为首版登录入口。",
+            "next": "优先完成 Apple Developer 的 Sign in with Apple；微信开放平台通过审核后再启用微信登录。",
         },
         {
             "id": "data",
