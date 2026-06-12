@@ -979,6 +979,47 @@ class PortfolioFlowTest(unittest.TestCase):
         self.assertIn("TC3-HMAC-SHA256", captured["headers"]["Authorization"])
         self.assertEqual(captured["headers"]["X-TC-Action"], "SendSms")
 
+    def test_apple_login_creates_authenticated_session(self):
+        original_verify = self.backend.verify_apple_identity_token
+        self.backend.verify_apple_identity_token = lambda identity_token: {
+            "sub": "apple-user-123",
+            "email": "apple@example.com",
+        }
+        try:
+            payload = self.backend.auth_apple_login(
+                self.backend.AppleLoginPayload(
+                    identityToken="header.payload.signature_for_test",
+                    fullName="Apple Test",
+                ),
+                user_agent="iPhone",
+                x_device_name="Alex iPhone",
+            )
+        finally:
+            self.backend.verify_apple_identity_token = original_verify
+
+        self.assertTrue(payload["authenticated"])
+        self.assertIn("token", payload)
+        self.assertEqual(payload["profile"]["displayName"], "Apple Test")
+
+    def test_wechat_login_creates_authenticated_session(self):
+        original_exchange = self.backend.exchange_wechat_code
+        self.backend.exchange_wechat_code = lambda code: {
+            "openid": "wechat-openid-123",
+            "unionid": "wechat-unionid-123",
+        }
+        try:
+            payload = self.backend.auth_wechat_login(
+                self.backend.WechatLoginPayload(code="wechat-code-test"),
+                user_agent="iPhone",
+                x_device_name="Alex iPhone",
+            )
+        finally:
+            self.backend.exchange_wechat_code = original_exchange
+
+        self.assertTrue(payload["authenticated"])
+        self.assertIn("token", payload)
+        self.assertEqual(payload["profile"]["displayName"], "微信用户")
+
 
 if __name__ == "__main__":
     unittest.main()

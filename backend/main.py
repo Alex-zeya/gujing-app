@@ -492,6 +492,13 @@ class PhoneLoginPayload(BaseModel):
     code: str = Field(min_length=4, max_length=8)
 
 
+class AppleLoginPayload(BaseModel):
+    identityToken: str = Field(min_length=20, max_length=4096)
+    authorizationCode: str | None = Field(default=None, max_length=2048)
+    userIdentifier: str | None = Field(default=None, max_length=256)
+    fullName: str | None = Field(default=None, max_length=80)
+
+
 class WechatLoginPayload(BaseModel):
     code: str = Field(min_length=3, max_length=128)
 
@@ -837,6 +844,11 @@ def user_id_for_phone(phone: str) -> str:
     return f"phone_{digest}"
 
 
+def user_id_for_social(provider: str, external_id: str) -> str:
+    digest = hashlib.sha1(f"{provider}:{external_id}".encode("utf-8")).hexdigest()[:20]
+    return f"{provider}_{digest}"
+
+
 def device_name_from_headers(user_agent: str | None = None, device_name: str | None = None) -> str:
     if device_name and device_name.strip():
         return device_name.strip()[:80]
@@ -1060,6 +1072,7 @@ def send_aliyun_sms_code(phone: str, code: str) -> dict[str, Any]:
         )
     return {
         "provider": "aliyun",
+        "name": "阿里云短信",
         "sent": True,
         "message": f"阿里云短信已提交：{payload.get('BizId') or payload.get('RequestId') or 'OK'}",
     }
@@ -1164,6 +1177,7 @@ def send_tencent_sms_code(phone: str, code: str) -> dict[str, Any]:
         )
     return {
         "provider": "tencent",
+        "name": "腾讯云短信",
         "sent": True,
         "message": f"腾讯云短信已提交：{first_status.get('SerialNo') or payload.get('Response', {}).get('RequestId') or 'OK'}",
     }
@@ -5759,6 +5773,7 @@ def init_db() -> None:
               default_market TEXT NOT NULL,
               phone TEXT,
               wechat_openid TEXT,
+              apple_user_id TEXT,
               created_at TEXT DEFAULT CURRENT_TIMESTAMP,
               updated_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
@@ -5769,6 +5784,8 @@ def init_db() -> None:
             db.execute("ALTER TABLE users ADD COLUMN phone TEXT")
         if "wechat_openid" not in existing_user_columns:
             db.execute("ALTER TABLE users ADD COLUMN wechat_openid TEXT")
+        if "apple_user_id" not in existing_user_columns:
+            db.execute("ALTER TABLE users ADD COLUMN apple_user_id TEXT")
         db.execute(
             """
             CREATE TABLE IF NOT EXISTS auth_sms_codes (
@@ -6120,6 +6137,9 @@ def init_db() -> None:
         )
         db.execute(
             "CREATE INDEX IF NOT EXISTS idx_users_wechat ON users (wechat_openid)"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_users_apple ON users (apple_user_id)"
         )
         for code, stock in STOCKS.items():
             db.execute(
@@ -6644,6 +6664,129 @@ def ensure_phone_user(phone: str) -> dict[str, Any]:
     return user_profile_show(user_id)
 
 
+APPLE_JWKS_CACHE: dict[str, Any] = {"fetchedAt": 0.0, "keys": []}
+
+
+def base64url_decode(value: str) -> bytes:
+    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+
+def apple_sign_in_audiences() -> set[str]:
+    return {
+        value
+        for value in (
+            os.getenv("APPLE_SIGN_IN_CLIENT_ID"),
+            os.getenv("APPLE_BUNDLE_ID"),
+            os.getenv("APNS_BUNDLE_ID"),
+            os.getenv("IOS_BUNDLE_ID"),
+            "com.zeyawang.gujing",
+        )
+        if value
+    }
+
+
+def fetch_apple_jwks() -> list[dict[str, Any]]:
+    if time.time() - float(APPLE_JWKS_CACHE.get("fetchedAt") or 0) < 3600 and APPLE_JWKS_CACHE.get("keys"):
+        return APPLE_JWKS_CACHE["keys"]
+    response = requests.get("https://appleid.apple.com/auth/keys", timeout=10)
+    response.raise_for_status()
+    keys = response.json().get("keys") or []
+    APPLE_JWKS_CACHE.update({"fetchedAt": time.time(), "keys": keys})
+    return keys
+
+
+def verify_rs256_signature(signing_input: bytes, signature: bytes, jwk: dict[str, Any]) -> bool:
+    try:
+        n = int.from_bytes(base64url_decode(jwk["n"]), "big")
+        e = int.from_bytes(base64url_decode(jwk["e"]), "big")
+    except Exception:
+        return False
+    key_length = (n.bit_length() + 7) // 8
+    encoded = pow(int.from_bytes(signature, "big"), e, n).to_bytes(key_length, "big")
+    digest_info = bytes.fromhex("3031300d060960864801650304020105000420") + hashlib.sha256(signing_input).digest()
+    if len(encoded) <= len(digest_info) + 3:
+        return False
+    if not encoded.startswith(b"\x00\x01") or not encoded.endswith(digest_info):
+        return False
+    padding = encoded[2 : -len(digest_info) - 1]
+    return bool(padding) and all(byte == 0xFF for byte in padding) and encoded[-len(digest_info) - 1] == 0
+
+
+def verify_apple_identity_token(identity_token: str) -> dict[str, Any]:
+    audiences = apple_sign_in_audiences()
+    if not audiences:
+        raise HTTPException(status_code=501, detail="Apple 登录需要配置 APPLE_SIGN_IN_CLIENT_ID 或 APPLE_BUNDLE_ID。")
+    try:
+        header_raw, payload_raw, signature_raw = identity_token.split(".")
+        header = json.loads(base64url_decode(header_raw))
+        claims = json.loads(base64url_decode(payload_raw))
+        signature = base64url_decode(signature_raw)
+    except Exception as error:
+        raise HTTPException(status_code=401, detail="Apple 登录凭证格式无效。") from error
+    if header.get("alg") != "RS256" or not header.get("kid"):
+        raise HTTPException(status_code=401, detail="Apple 登录凭证签名算法无效。")
+    key = next((item for item in fetch_apple_jwks() if item.get("kid") == header.get("kid")), None)
+    if not key or not verify_rs256_signature(f"{header_raw}.{payload_raw}".encode("utf-8"), signature, key):
+        raise HTTPException(status_code=401, detail="Apple 登录凭证验签失败。")
+    if claims.get("iss") != "https://appleid.apple.com":
+        raise HTTPException(status_code=401, detail="Apple 登录签发方无效。")
+    if claims.get("aud") not in audiences:
+        raise HTTPException(status_code=401, detail="Apple 登录应用标识不匹配。")
+    if int(claims.get("exp") or 0) <= int(time.time()):
+        raise HTTPException(status_code=401, detail="Apple 登录凭证已过期。")
+    if not claims.get("sub"):
+        raise HTTPException(status_code=401, detail="Apple 登录缺少用户标识。")
+    return claims
+
+
+def ensure_social_user(provider: str, external_id: str, display_name: str | None = None) -> dict[str, Any]:
+    clean_external_id = (external_id or "").strip()
+    if not clean_external_id:
+        raise HTTPException(status_code=422, detail="third-party user id required")
+    user_id = user_id_for_social(provider, clean_external_id)
+    name = (display_name or "").strip()[:32] or ("Apple 用户" if provider == "apple" else "微信用户")
+    column = "apple_user_id" if provider == "apple" else "wechat_openid"
+    with connect() as db:
+        db.execute(
+            f"""
+            INSERT INTO users (id, display_name, risk_level, default_market, {column}, updated_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(id) DO UPDATE SET
+              {column} = excluded.{column},
+              updated_at = CURRENT_TIMESTAMP
+            """,
+            (user_id, name, DEFAULT_USER_PROFILE["riskLevel"], DEFAULT_USER_PROFILE["defaultMarket"], clean_external_id),
+        )
+    return user_profile_show(user_id)
+
+
+def exchange_wechat_code(code: str) -> dict[str, Any]:
+    app_id = os.getenv("WECHAT_APP_ID")
+    app_secret = os.getenv("WECHAT_APP_SECRET")
+    if not app_id or not app_secret:
+        raise HTTPException(
+            status_code=501,
+            detail="微信登录需要先在微信开放平台创建移动应用，并配置 WECHAT_APP_ID/WECHAT_APP_SECRET。",
+        )
+    response = requests.get(
+        "https://api.weixin.qq.com/sns/oauth2/access_token",
+        params={
+            "appid": app_id,
+            "secret": app_secret,
+            "code": code,
+            "grant_type": "authorization_code",
+        },
+        timeout=10,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if payload.get("errcode"):
+        raise HTTPException(status_code=401, detail=f"微信登录失败：{payload.get('errmsg') or payload.get('errcode')}")
+    if not payload.get("openid"):
+        raise HTTPException(status_code=401, detail="微信登录未返回用户标识。")
+    return payload
+
+
 @app.get("/api/auth/me")
 def auth_me(authorization: str | None = Header(default=None)) -> dict[str, Any]:
     token = bearer_token_from_header(authorization)
@@ -6785,14 +6928,31 @@ def auth_sms_login(
     return auth_payload(profile["id"], session["token"], session["expiresAt"])
 
 
+@app.post("/api/auth/apple/login")
+def auth_apple_login(
+    payload: AppleLoginPayload,
+    user_agent: str | None = Header(default=None),
+    x_device_name: str | None = Header(default=None),
+) -> dict[str, Any]:
+    claims = verify_apple_identity_token(payload.identityToken)
+    display_name = payload.fullName or claims.get("email") or "Apple 用户"
+    profile = ensure_social_user("apple", claims["sub"], display_name)
+    session = create_auth_token(profile["id"], user_agent, x_device_name)
+    cleanup_expired_sessions()
+    return auth_payload(profile["id"], session["token"], session["expiresAt"])
+
+
 @app.post("/api/auth/wechat/login")
-def auth_wechat_login(_: WechatLoginPayload) -> dict[str, Any]:
-    if not os.getenv("WECHAT_APP_ID") or not os.getenv("WECHAT_APP_SECRET"):
-        raise HTTPException(
-            status_code=501,
-            detail="微信登录需要先在微信开放平台创建移动应用，并配置 WECHAT_APP_ID/WECHAT_APP_SECRET。",
-        )
-    raise HTTPException(status_code=501, detail="微信登录服务暂未启用，请先使用手机号登录。")
+def auth_wechat_login(
+    payload: WechatLoginPayload,
+    user_agent: str | None = Header(default=None),
+    x_device_name: str | None = Header(default=None),
+) -> dict[str, Any]:
+    wechat_data = exchange_wechat_code(payload.code)
+    profile = ensure_social_user("wechat", wechat_data.get("unionid") or wechat_data["openid"], "微信用户")
+    session = create_auth_token(profile["id"], user_agent, x_device_name)
+    cleanup_expired_sessions()
+    return auth_payload(profile["id"], session["token"], session["expiresAt"])
 
 
 @app.post("/api/auth/logout")
@@ -7060,6 +7220,10 @@ def system_readiness_payload() -> dict[str, Any]:
             "name": sms_status.get("name"),
             "pendingEnv": sms_status.get("pending", []),
         },
+        "appleLogin": {
+            "ok": bool(apple_sign_in_audiences()),
+            "pendingEnv": ["APPLE_SIGN_IN_CLIENT_ID 或 APPLE_BUNDLE_ID"] if not apple_sign_in_audiences() else [],
+        },
         "wechat": {
             "ok": bool(os.getenv("WECHAT_APP_ID") and os.getenv("WECHAT_APP_SECRET")),
             "pendingEnv": [
@@ -7144,10 +7308,10 @@ def launch_readiness_payload(checks: dict[str, Any]) -> dict[str, Any]:
         {
             "id": "auth",
             "label": "登录验证",
-            "ok": bool(checks.get("sms", {}).get("ok") and checks.get("sms", {}).get("provider") != "mock"),
+            "ok": bool(checks.get("appleLogin", {}).get("ok") or checks.get("wechat", {}).get("ok")),
             "required": True,
-            "summary": "正式用户需要真实短信服务，mock 只适合测试。",
-            "next": "配置阿里云或腾讯云短信，并把 SMS_PROVIDER 从 mock 切走。",
+            "summary": "正式用户使用 Apple 登录或微信登录，手机号短信仅作为备用能力。",
+            "next": "优先在 Apple Developer 开启 Sign in with Apple；如保留微信按钮，再配置微信开放平台移动应用。",
         },
         {
             "id": "data",
@@ -7210,7 +7374,7 @@ def launch_readiness_payload(checks: dict[str, Any]) -> dict[str, Any]:
             "label": "微信登录",
             "ok": bool(checks.get("wechat", {}).get("ok")),
             "required": False,
-            "summary": "微信登录是增强项，不影响手机号登录首版。",
+            "summary": "微信登录是中国用户增强入口；App Store 版本仍建议保留 Apple 登录。",
             "next": "如保留按钮，需要完成微信开放平台移动应用配置。",
         },
     ]
@@ -7278,8 +7442,8 @@ def system_monitor_payload() -> dict[str, Any]:
         action_items.append("后台任务存在连续失败，查看任务错误并手动重跑。")
     if recent_error_count:
         action_items.append("最近有接口错误，先查看错误日志中出现频率最高的路径。")
-    if not readiness["checks"]["sms"]["ok"]:
-        action_items.append("正式上线前需要配置真实短信服务商。")
+    if not (readiness["checks"].get("appleLogin", {}).get("ok") or readiness["checks"].get("wechat", {}).get("ok")):
+        action_items.append("正式上线前至少需要接通 Apple 登录；微信登录可作为国内用户入口。")
     if not readiness["checks"]["tushare"]["ok"]:
         action_items.append("历史 K 线可继续用免费源，生产稳定性建议准备授权数据源。")
     if not action_items:
@@ -7317,6 +7481,7 @@ def system_monitor_payload() -> dict[str, Any]:
                 "items": errors[:5],
             },
             "auth": {
+                "appleLogin": readiness["checks"]["appleLogin"],
                 "sms": readiness["checks"]["sms"],
                 "wechat": readiness["checks"]["wechat"],
             },

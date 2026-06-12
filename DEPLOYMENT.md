@@ -21,14 +21,34 @@
 - `CORS_ORIGINS`：允许访问后端的前端来源，用英文逗号分隔。
 - `DATABASE_URL`：PostgreSQL 连接串。Render Blueprint 会自动从 `gujing-db` 注入；其他平台可使用 Neon、Supabase、RDS 等连接串。
 - `GUJING_DB_PATH`：仅本地 SQLite 开发使用。线上不要依赖 Web 服务本地文件保存用户数据。
-- `SMS_PROVIDER`：前期可以用 `mock` 测试，正式短信需要换成 `aliyun` 或 `tencent` 并配置对应密钥。
+- `SMS_PROVIDER`：短信备用能力，前期保留 `mock`；首版真实登录优先走 Apple/微信。
 - `TUSHARE_TOKEN`：历史 K 线数据 token。
 - `PRIVACY_POLICY_URL`：公开 HTTPS 隐私政策地址，App Store 审核需要。
+- `APPLE_SIGN_IN_CLIENT_ID` / `APPLE_BUNDLE_ID`：Apple 登录的应用标识，iOS App 默认使用 Bundle ID。
+- `WECHAT_APP_ID` / `WECHAT_APP_SECRET`：微信开放平台移动应用配置；如果暂不上微信，可先留空。
 - `APNS_KEY_ID` / `APNS_TEAM_ID` / `APNS_BUNDLE_ID`：如果首版要做 iOS 系统推送，需要配置 Apple Push Notification 服务。
+
+## 登录方式
+
+首版登录策略改为 `Apple 登录 + 微信登录`，取消前端手机号验证码入口。后端仍保留短信接口作为未来备用，但 App Store 首发不再被短信资质卡住。
+
+Apple 登录上线前需要：
+
+1. Apple Developer 账号里给 App Identifier 开启 `Sign in with Apple`。
+2. Xcode 给 target 增加 `Sign in with Apple` capability。
+3. Render 设置 `APPLE_SIGN_IN_CLIENT_ID` 和 `APPLE_BUNDLE_ID`，一般都是 iOS Bundle ID：`com.zeyawang.gujing`。
+4. iOS 原生层拿到 Apple `identityToken` 后传给 `POST /api/auth/apple/login`。
+
+微信登录上线前需要：
+
+1. 微信开放平台创建移动应用。
+2. 配置 iOS Bundle ID、Universal Link、URL Scheme。
+3. Render 设置 `WECHAT_APP_ID` 和 `WECHAT_APP_SECRET`。
+4. iOS 原生层拿到微信授权 `code` 后传给 `POST /api/auth/wechat/login`。
 
 ## 真实短信登录
 
-后端已经支持阿里云和腾讯云短信 HTTP API。上线前建议先保持 `SMS_PROVIDER=mock` 跑完整流程，等短信签名和模板审核通过后再切换真实 provider。
+后端已经支持阿里云和腾讯云短信 HTTP API，但前端首版不再展示手机号验证码。后续如果有企业或机构短信资质，可以再把手机号登录作为备用入口打开。
 
 阿里云必填：
 
@@ -70,7 +90,7 @@ TENCENT_SMS_TEMPLATE_PARAM_SET=code,minutes
 
 注意：
 
-- `render.yaml` 里当前 `SMS_PROVIDER=mock`，只适合测试；真实登录要在 Render Environment 里改成 `aliyun` 或 `tencent`，并保存、重建、部署。
+- `render.yaml` 里当前 `SMS_PROVIDER=mock`，短信仅作为备用测试能力；首版真实登录优先配置 Apple 登录和微信登录。
 - `render.yaml` 已配置 `gujing-db` PostgreSQL，并把连接串注入 `DATABASE_URL`。如果你在 Render 控制台看到 Blueprint 变更，需要点同步/重新部署。
 - Render Free 服务空闲一段时间会休眠，第一次打开可能需要等待几十秒。
 - Render 免费 PostgreSQL 适合测试，有期限和资源限制；正式上线前建议换成付费数据库或外部持久数据库。
@@ -100,8 +120,8 @@ npm run readiness
 ## 上线前必须替换
 
 - 临时 `localtunnel` 地址。
-- 开发模拟短信：正式外测前切到阿里云或腾讯云真实短信，并用自己的手机号完整测试发送、登录、退出、重新登录。
+- 第三方登录：正式外测前至少接通 Apple 登录；微信登录如果保留按钮，需要完成微信开放平台移动应用配置。
 - 生产 CORS 域名。
 - 免费测试数据库或临时本地文件路径。
 
-正式进入公开测试前，建议完成一次线上 readiness、股票搜索、手机号登录、持仓写入和真机 App 连接测试。
+正式进入公开测试前，建议完成一次线上 readiness、股票搜索、Apple 登录、微信登录、持仓写入和真机 App 连接测试。

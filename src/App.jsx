@@ -6,7 +6,9 @@ import {
   BriefcaseBusiness,
   ChevronRight,
   CheckCheck,
+  Fingerprint,
   LogOut,
+  MessageCircle,
   Plus,
   Search,
   Settings2,
@@ -1723,24 +1725,10 @@ function App() {
     }
   }
 
-  async function sendLoginCode(phone) {
-    const result = await apiJson('/api/auth/sms/send', {
-      method: 'POST',
-      skipAuth: true,
-      body: JSON.stringify({ phone }),
-    })
-    setAuthNotice(result.devCode ? `开发验证码：${result.devCode}` : '验证码已发送')
-    return result
-  }
-
-  async function loginWithPhone(phone, code) {
-    const result = await apiJson('/api/auth/sms/login', {
-      method: 'POST',
-      body: JSON.stringify({ phone, code }),
-    })
+  async function finishLogin(result, notice = '登录成功') {
     localStorage.setItem(AUTH_TOKEN_KEY, result.token)
     setAuthSession(result)
-    setAuthNotice('登录成功')
+    setAuthNotice(notice)
     const [watchItems, portfolioSnapshot, insights, alertSettings, alertFeed, taskData, userData, readiness, monitor] = await Promise.all([
       apiJson('/api/watchlist'),
       apiJson('/api/portfolio'),
@@ -1767,14 +1755,40 @@ function App() {
     return result
   }
 
+  async function loginWithApple() {
+    try {
+      const result = await apiJson('/api/auth/apple/login', {
+        method: 'POST',
+        skipAuth: true,
+        body: JSON.stringify({
+          identityToken: 'apple_identity_token_placeholder',
+          authorizationCode: 'apple_authorization_code_placeholder',
+        }),
+      })
+      return finishLogin(result, 'Apple 登录成功')
+    } catch (error) {
+      const message = String(error?.message ?? '')
+      setAuthNotice(message.includes('501')
+        ? 'Apple 登录需要先在 Apple Developer 开启 Sign in with Apple，并接入 iOS 原生授权。'
+        : 'Apple 登录暂时不可用，请稍后再试。')
+      throw error
+    }
+  }
+
   async function loginWithWechat() {
     try {
-      await apiJson('/api/auth/wechat/login', {
+      const result = await apiJson('/api/auth/wechat/login', {
         method: 'POST',
+        skipAuth: true,
         body: JSON.stringify({ code: 'wechat_app_code_placeholder' }),
       })
-    } catch {
-      setAuthNotice('微信登录需要先配置微信开放平台 AppID 和 Secret')
+      return finishLogin(result, '微信登录成功')
+    } catch (error) {
+      const message = String(error?.message ?? '')
+      setAuthNotice(message.includes('501')
+        ? '微信登录需要先在微信开放平台创建移动应用，并配置 AppID 和 Secret。'
+        : '微信登录暂时不可用，请稍后再试。')
+      throw error
     }
   }
 
@@ -1949,8 +1963,7 @@ function App() {
       <>
         <LoginScreen
           authNotice={authNotice}
-          sendLoginCode={sendLoginCode}
-          loginWithPhone={loginWithPhone}
+          loginWithApple={loginWithApple}
           loginWithWechat={loginWithWechat}
           openLegalPanel={setLegalPanel}
         />
@@ -2096,8 +2109,7 @@ function App() {
             saveUserProfile={saveUserProfile}
             authSession={authSession}
             authNotice={authNotice}
-            sendLoginCode={sendLoginCode}
-            loginWithPhone={loginWithPhone}
+            loginWithApple={loginWithApple}
             loginWithWechat={loginWithWechat}
             logoutUser={logoutUser}
             deleteAccount={deleteAccount}
@@ -2157,8 +2169,7 @@ function App() {
 
 function LoginScreen({
   authNotice,
-  sendLoginCode,
-  loginWithPhone,
+  loginWithApple,
   loginWithWechat,
   openLegalPanel,
 }) {
@@ -2183,8 +2194,7 @@ function LoginScreen({
         <AuthPanel
           authSession={{ authenticated: false }}
           authNotice={authNotice}
-          sendLoginCode={sendLoginCode}
-          loginWithPhone={loginWithPhone}
+          loginWithApple={loginWithApple}
           loginWithWechat={loginWithWechat}
           logoutUser={() => {}}
         />
@@ -4360,8 +4370,7 @@ function ProfileView({
   saveUserProfile,
   authSession,
   authNotice,
-  sendLoginCode,
-  loginWithPhone,
+  loginWithApple,
   loginWithWechat,
   logoutUser,
   deleteAccount,
@@ -4571,8 +4580,7 @@ function ProfileView({
       <AuthPanel
         authSession={authSession}
         authNotice={authNotice}
-        sendLoginCode={sendLoginCode}
-        loginWithPhone={loginWithPhone}
+        loginWithApple={loginWithApple}
         loginWithWechat={loginWithWechat}
         logoutUser={logoutUser}
       />
@@ -4882,7 +4890,7 @@ const legalContent = {
     items: [
       {
         title: '会保存什么',
-        text: '手机号登录状态、观察股票、持仓金额、提醒规则和风险偏好会保存到后端，用于同步你的个人页面。',
+        text: 'Apple 或微信登录状态、观察股票、持仓金额、提醒规则和风险偏好会保存到后端，用于同步你的个人页面。',
       },
       {
         title: '不会做什么',
@@ -4890,7 +4898,7 @@ const legalContent = {
       },
       {
         title: '后续上线要求',
-        text: '隐私政策网页和数据删除入口已接入，正式上架前还需要补充运营主体、联系邮箱、短信和微信登录服务商说明。',
+        text: '隐私政策网页和数据删除入口已接入，正式上架前还需要补充运营主体、联系邮箱和第三方登录服务商说明。',
       },
     ],
   },
@@ -4905,7 +4913,7 @@ const legalContent = {
       },
       {
         title: '正在完善',
-        text: '真实行情稳定性、历史 K 线、个性化建议记录、短信验证码和微信登录还需要继续接入服务商。',
+        text: '真实行情稳定性、历史 K 线、个性化建议记录、Apple 登录和微信登录还需要继续接入服务商。',
       },
       {
         title: '上线前检查',
@@ -4918,59 +4926,30 @@ const legalContent = {
 function AuthPanel({
   authSession,
   authNotice,
-  sendLoginCode,
-  loginWithPhone,
+  loginWithApple,
   loginWithWechat,
   logoutUser,
 }) {
-  const [phone, setPhone] = useState('')
-  const [code, setCode] = useState('')
-  const [isSending, setIsSending] = useState(false)
-  const [isLoggingIn, setIsLoggingIn] = useState(false)
+  const [activeProvider, setActiveProvider] = useState('')
   const [localNotice, setLocalNotice] = useState('')
 
-  async function handleSendCode() {
-    if (!phone.trim()) return
-    setIsSending(true)
+  async function handleProviderLogin(provider) {
+    const login = provider === 'apple' ? loginWithApple : loginWithWechat
+    setActiveProvider(provider)
     setLocalNotice('')
     try {
-      const result = await sendLoginCode(phone.trim())
-      if (result.devCode) {
-        setCode(result.devCode)
-        setLocalNotice(`开发验证码：${result.devCode}`)
-      } else {
-        setLocalNotice('验证码已发送')
-      }
+      await login()
     } catch (error) {
       const message = String(error?.message ?? '')
       if (message.includes('timed out')) {
-        setLocalNotice('验证码请求超时，请确认手机和电脑在同一个 Wi-Fi')
-      } else {
-        setLocalNotice(`验证码发送失败：${message || '请确认后端已启动'}`)
-      }
-    } finally {
-      setIsSending(false)
-    }
-  }
-
-  async function handleLogin(event) {
-    event.preventDefault()
-    if (!phone.trim() || !code.trim()) return
-    setIsLoggingIn(true)
-    setLocalNotice('')
-    try {
-      await loginWithPhone(phone.trim(), code.trim())
-    } catch (error) {
-      const message = String(error?.message ?? '')
-      if (message.includes('401')) {
-        setLocalNotice('验证码不正确或已过期')
-      } else if (message.includes('timed out')) {
         setLocalNotice('登录连接超时，请确认手机和电脑在同一个 Wi-Fi')
       } else {
-        setLocalNotice('登录失败，请确认后端已启动并允许手机访问')
+        setLocalNotice(provider === 'apple'
+          ? 'Apple 登录需要先接入 iOS 原生授权。'
+          : '微信登录需要先完成微信开放平台配置。')
       }
     } finally {
-      setIsLoggingIn(false)
+      setActiveProvider('')
     }
   }
 
@@ -4997,36 +4976,31 @@ function AuthPanel({
         <UserRound size={18} />
         <h2>登录账户</h2>
       </div>
-      <form className="auth-form" onSubmit={handleLogin}>
-        <label>
-          <span>手机号码</span>
-          <input
-            inputMode="tel"
-            value={phone}
-            placeholder="输入手机号"
-            onChange={(event) => setPhone(event.target.value)}
-          />
-        </label>
-        <label>
-          <span>验证码</span>
-          <div className="auth-code-row">
-            <input
-              inputMode="numeric"
-              value={code}
-              placeholder="6 位验证码"
-              onChange={(event) => setCode(event.target.value)}
-            />
-            <button type="button" onClick={handleSendCode} disabled={isSending || !phone.trim()}>
-              {isSending ? '发送中' : '获取验证码'}
-            </button>
-          </div>
-        </label>
-        <button className="secondary-action" type="submit" disabled={isLoggingIn || !phone.trim() || !code.trim()}>
-          {isLoggingIn ? '登录中' : '手机号登录'}
+      <div className="auth-provider-list">
+        <button
+          className="auth-provider-button is-apple"
+          type="button"
+          disabled={Boolean(activeProvider)}
+          onClick={() => handleProviderLogin('apple')}
+        >
+          <Fingerprint size={19} />
+          <span>{activeProvider === 'apple' ? '正在唤起 Apple 登录' : '使用 Apple 登录'}</span>
         </button>
-      </form>
-      <button className="wechat-login" type="button" onClick={loginWithWechat}>
-        微信登录
+        <button
+          className="auth-provider-button is-wechat"
+          type="button"
+          disabled={Boolean(activeProvider)}
+          onClick={() => handleProviderLogin('wechat')}
+        >
+          <MessageCircle size={19} />
+          <span>{activeProvider === 'wechat' ? '正在唤起微信登录' : '使用微信登录'}</span>
+        </button>
+      </div>
+      <p className="auth-helper">
+        首版取消短信验证码，减少资质和短信到达率问题。Apple 登录用于 App Store 审核，微信登录用于国内用户。
+      </p>
+      <button className="auth-secondary-link" type="button" onClick={() => setLocalNotice('测试入口已隐藏，正式版只保留 Apple 和微信登录。')}>
+        内测账号说明
       </button>
       {(authNotice || localNotice) && <p className="auth-notice">{localNotice || authNotice}</p>}
     </section>

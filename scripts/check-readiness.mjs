@@ -24,7 +24,8 @@ async function main() {
   if (checks.dailyBackfill) {
     console.log(`每日补全：${checks.dailyBackfill.configured ? '已注册' : '未注册'}，最近 ${checks.dailyBackfill.syncedCount ?? 0} 只`)
   }
-  console.log(`登录：${checks.sms?.provider || 'unknown'} / ${checks.sms?.name || '未配置'}`)
+  console.log(`Apple 登录：${checks.appleLogin?.ok ? '已配置' : '待配置'}`)
+  console.log(`微信登录：${checks.wechat?.ok ? '已配置' : '待配置'}`)
   console.log(`生产地址：${checks.deployment?.serviceUrl || '未检测到 Render HTTPS 地址'}`)
   console.log('')
 

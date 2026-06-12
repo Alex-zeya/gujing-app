@@ -25,6 +25,10 @@ services:
         sync: false
       - key: PRIVACY_POLICY_URL
         value: https://gujing-api.onrender.com/privacy.html
+      - key: APPLE_SIGN_IN_CLIENT_ID
+        value: com.zeyawang.gujing
+      - key: APPLE_BUNDLE_ID
+        value: com.zeyawang.gujing
       - key: ALIYUN_SMS_ACCESS_KEY_ID
         sync: false
       - key: ALIYUN_SMS_ACCESS_KEY_SECRET

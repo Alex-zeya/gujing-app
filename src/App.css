@@ -5566,7 +5566,8 @@
 }
 
 .auth-panel,
-.auth-form {
+.auth-form,
+.auth-provider-list {
   display: grid;
   gap: 9px;
 }
@@ -5625,6 +5626,65 @@
   width: 100%;
   background: oklch(0.96 0.035 150);
   color: oklch(0.35 0.12 150);
+}
+
+.auth-provider-list {
+  gap: 10px;
+}
+
+.auth-provider-button {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0 14px;
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  align-items: center;
+  gap: 10px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.auth-provider-button span {
+  justify-self: center;
+  transform: translateX(-16px);
+}
+
+.auth-provider-button.is-apple {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: white;
+}
+
+.auth-provider-button.is-wechat {
+  background: oklch(0.95 0.045 150);
+  border-color: oklch(0.82 0.08 150);
+  color: oklch(0.33 0.12 150);
+}
+
+.auth-provider-button:disabled {
+  opacity: 0.68;
+}
+
+.auth-helper {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.5;
+}
+
+.auth-secondary-link {
+  min-height: 34px;
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .auth-notice {
