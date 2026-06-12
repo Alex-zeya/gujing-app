@@ -17,7 +17,7 @@
 | K 线和基础字段 | 已接入兜底 | Tushare 优先，公开数据源兜底，缺字段时保留缓存。 |
 | 持仓与交易流水 | 已支持 | 支持加入持仓、买入、卖出、调整、收益和本金计算。 |
 | 组合风险 | 已支持 | 根据行业集中度、单股集中度、收益分布和波动状态给出风险提示。 |
-| 登录系统 | 接入中 | 首版只展示 Apple 登录 + 微信登录；Apple iOS 原生桥接已加入，微信登录已具备后端换码和 App 状态检测，短信验证码不作为首版入口。 |
+| 登录系统 | 接入中 | 首版恢复手机号验证码登录；微信登录已具备后端换码和 App 状态检测，审核通过后启用；Apple 登录能力保留但默认不展示。 |
 | iOS 工程 | 已接入 | Capacitor iOS 项目已生成，可用 Xcode 真机运行。 |
 | App Store 上架 | 未完成 | 还需要在 Xcode/Apple Developer 开启 Apple 登录能力、公开隐私政策 URL、审核素材和真机回归。 |
 
@@ -64,8 +64,8 @@
 ### 我的
 
 - 用户资料、风险偏好、默认市场。
-- 运行监控：查看后端健康分、行情覆盖、任务状态、错误日志。
-- 上线准备度：显示当前距离 TestFlight / App Store 上线还差什么。
+- 普通用户默认只看到账户、隐私、风险说明和数据管理。
+- 内部运行监控、上线准备度和建议复盘默认隐藏，仅在 `VITE_SHOW_ADMIN_TOOLS=true` 时展示。
 - 隐私说明、风险说明、删除账户 / 清除数据。
 
 ## 技术架构
@@ -226,7 +226,7 @@ npm run deploy:check -- https://你的后端域名
 - `VITE_API_BASE_URL` 指向 HTTPS 后端。
 - `PRIVACY_POLICY_URL` 是公开 HTTPS 地址。
   - 当前后端也会公开 `/privacy.html` 和 `/support.html`，Render 默认可使用 `https://gujing-api.onrender.com/privacy.html`。
-- 登录策略使用 Apple 登录和微信登录；手机号验证码不作为首版上线入口。
+- 登录策略以手机号验证码为主；微信登录审核通过后启用；Apple 登录能力后置，不作为当前默认入口。
 
 如果 `deploy:check` 显示线上仍是 SQLite、股票目录只有少量种子数据、每日补全接口返回 404，或 readiness 里没有 `stockDirectory` / `dailyBackfill` 字段，优先在 Render 里执行 **Manual Deploy / Blueprint Sync** 重新部署最新 `main` 分支，并确认 Blueprint 或环境变量已经把 `DATABASE_URL`、`TUSHARE_TOKEN`、`MIN_A_STOCK_DIRECTORY_COUNT` 注入到 `gujing-api` 服务。
 

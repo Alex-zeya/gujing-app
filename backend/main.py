@@ -7382,10 +7382,10 @@ def launch_readiness_payload(checks: dict[str, Any]) -> dict[str, Any]:
         {
             "id": "auth",
             "label": "登录验证",
-            "ok": bool(checks.get("appleLogin", {}).get("ok") or checks.get("wechat", {}).get("ok")),
+            "ok": bool(checks.get("sms", {}).get("ok") or checks.get("wechat", {}).get("ok") or checks.get("appleLogin", {}).get("ok")),
             "required": True,
-            "summary": "正式用户使用 Apple 登录或微信登录，手机号验证码不作为首版登录入口。",
-            "next": "优先完成 Apple Developer 的 Sign in with Apple；微信开放平台通过审核后再启用微信登录。",
+            "summary": "首版以手机号验证码登录为主，微信登录审核通过后启用，Apple 登录可后置。",
+            "next": "先确认短信服务商可发验证码；微信开放平台通过审核后再启用微信登录。",
         },
         {
             "id": "data",
@@ -7516,8 +7516,12 @@ def system_monitor_payload() -> dict[str, Any]:
         action_items.append("后台任务存在连续失败，查看任务错误并手动重跑。")
     if recent_error_count:
         action_items.append("最近有接口错误，先查看错误日志中出现频率最高的路径。")
-    if not (readiness["checks"].get("appleLogin", {}).get("ok") or readiness["checks"].get("wechat", {}).get("ok")):
-        action_items.append("正式上线前至少需要接通 Apple 登录；微信登录可作为国内用户入口。")
+    if not (
+        readiness["checks"].get("sms", {}).get("ok")
+        or readiness["checks"].get("appleLogin", {}).get("ok")
+        or readiness["checks"].get("wechat", {}).get("ok")
+    ):
+        action_items.append("正式上线前至少需要接通一种真实登录方式，当前优先手机号验证码。")
     if not readiness["checks"]["tushare"]["ok"]:
         action_items.append("历史 K 线可继续用免费源，生产稳定性建议准备授权数据源。")
     if not action_items:

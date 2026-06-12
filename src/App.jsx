@@ -7,7 +7,6 @@ import {
   BriefcaseBusiness,
   ChevronRight,
   CheckCheck,
-  Fingerprint,
   LogOut,
   MessageCircle,
   Plus,
@@ -1816,6 +1815,31 @@ function App() {
     }
   }
 
+  async function sendLoginSms(phone) {
+    const result = await apiJson('/api/auth/sms/send', {
+      method: 'POST',
+      skipAuth: true,
+      body: JSON.stringify({ phone }),
+    })
+    if (result.sent) {
+      setAuthNotice(`验证码已发送，${result.providerName ?? '短信服务'} 有效期约 5 分钟。`)
+    } else if (result.devCode) {
+      setAuthNotice(`开发环境验证码：${result.devCode}`)
+    } else {
+      setAuthNotice(result.message || '验证码发送失败，请稍后再试。')
+    }
+    return result
+  }
+
+  async function loginWithSms(phone, code) {
+    const result = await apiJson('/api/auth/sms/login', {
+      method: 'POST',
+      skipAuth: true,
+      body: JSON.stringify({ phone, code }),
+    })
+    return finishLogin(result, '手机号登录成功')
+  }
+
   async function loginWithWechat() {
     try {
       const status = await apiJson('/api/auth/wechat/status', { skipAuth: true })
@@ -2034,6 +2058,8 @@ function App() {
       <>
         <LoginScreen
           authNotice={authNotice}
+          loginWithSms={loginWithSms}
+          sendLoginSms={sendLoginSms}
           loginWithApple={loginWithApple}
           loginWithWechat={loginWithWechat}
           openLegalPanel={setLegalPanel}
@@ -2180,6 +2206,8 @@ function App() {
             saveUserProfile={saveUserProfile}
             authSession={authSession}
             authNotice={authNotice}
+            loginWithSms={loginWithSms}
+            sendLoginSms={sendLoginSms}
             loginWithApple={loginWithApple}
             loginWithWechat={loginWithWechat}
             logoutUser={logoutUser}
@@ -2240,6 +2268,8 @@ function App() {
 
 function LoginScreen({
   authNotice,
+  loginWithSms,
+  sendLoginSms,
   loginWithApple,
   loginWithWechat,
   openLegalPanel,
@@ -2265,6 +2295,8 @@ function LoginScreen({
         <AuthPanel
           authSession={{ authenticated: false }}
           authNotice={authNotice}
+          loginWithSms={loginWithSms}
+          sendLoginSms={sendLoginSms}
           loginWithApple={loginWithApple}
           loginWithWechat={loginWithWechat}
           logoutUser={() => {}}
@@ -4055,25 +4087,27 @@ function PortfolioView({
         </details>
       )}
 
-      <details
-        className="panel model-performance-panel"
-        onToggle={(event) => {
-          if (event.currentTarget.open) loadBacktests()
-        }}
-      >
-        <summary>
-          <span>
-            <BarChart3 size={18} />
-            建议复盘
-          </span>
-          <em>
-            {backtests.summary?.hitRate !== null && backtests.summary?.hitRate !== undefined
-              ? `命中率 ${backtests.summary.hitRate}%`
-              : '点开查看'}
-          </em>
-        </summary>
-        <ModelPerformanceView backtests={backtests} />
-      </details>
+      {SHOW_ADMIN_TOOLS && (
+        <details
+          className="panel model-performance-panel"
+          onToggle={(event) => {
+            if (event.currentTarget.open) loadBacktests()
+          }}
+        >
+          <summary>
+            <span>
+              <BarChart3 size={18} />
+              建议复盘
+            </span>
+            <em>
+              {backtests.summary?.hitRate !== null && backtests.summary?.hitRate !== undefined
+                ? `命中率 ${backtests.summary.hitRate}%`
+                : '点开查看'}
+            </em>
+          </summary>
+          <ModelPerformanceView backtests={backtests} />
+        </details>
+      )}
 
       <section className="panel">
         <div className="section-title">
@@ -4460,6 +4494,8 @@ function ProfileView({
   saveUserProfile,
   authSession,
   authNotice,
+  loginWithSms,
+  sendLoginSms,
   loginWithApple,
   loginWithWechat,
   logoutUser,
@@ -4670,6 +4706,8 @@ function ProfileView({
       <AuthPanel
         authSession={authSession}
         authNotice={authNotice}
+        loginWithSms={loginWithSms}
+        sendLoginSms={sendLoginSms}
         loginWithApple={loginWithApple}
         loginWithWechat={loginWithWechat}
         logoutUser={logoutUser}
@@ -5062,12 +5100,68 @@ const legalContent = {
 function AuthPanel({
   authSession,
   authNotice,
+  loginWithSms,
+  sendLoginSms,
   loginWithApple,
   loginWithWechat,
   logoutUser,
 }) {
   const [activeProvider, setActiveProvider] = useState('')
   const [localNotice, setLocalNotice] = useState('')
+  const [phone, setPhone] = useState('')
+  const [code, setCode] = useState('')
+  const [smsCooldown, setSmsCooldown] = useState(0)
+
+  useEffect(() => {
+    if (!smsCooldown) return undefined
+    const timer = window.setTimeout(() => setSmsCooldown((value) => Math.max(0, value - 1)), 1000)
+    return () => window.clearTimeout(timer)
+  }, [smsCooldown])
+
+  async function handleSendSms() {
+    const cleanPhone = phone.trim()
+    if (cleanPhone.length < 6) {
+      setLocalNotice('请输入正确的手机号。')
+      return
+    }
+    setActiveProvider('sms-code')
+    setLocalNotice('')
+    try {
+      const result = await sendLoginSms(cleanPhone)
+      setSmsCooldown(60)
+      if (result.devCode) setCode(result.devCode)
+      if (!result.sent && !result.devCode) setLocalNotice(result.message || '验证码发送失败，请稍后再试。')
+    } catch (error) {
+      const message = String(error?.message ?? '')
+      setLocalNotice(message.includes('timed out')
+        ? '验证码请求超时，请确认后端服务已启动。'
+        : '验证码发送失败，请稍后再试。')
+    } finally {
+      setActiveProvider('')
+    }
+  }
+
+  async function handleSmsLogin(event) {
+    event.preventDefault()
+    if (!phone.trim() || !code.trim()) {
+      setLocalNotice('请输入手机号和验证码。')
+      return
+    }
+    setActiveProvider('sms-login')
+    setLocalNotice('')
+    try {
+      await loginWithSms(phone.trim(), code.trim())
+    } catch (error) {
+      const message = String(error?.message ?? '')
+      setLocalNotice(message.includes('expired')
+        ? '验证码已过期，请重新获取。'
+        : message.includes('invalid') || message.includes('not found')
+          ? '验证码不正确，请检查后再试。'
+          : '登录失败，请稍后再试。')
+    } finally {
+      setActiveProvider('')
+    }
+  }
 
   async function handleProviderLogin(provider) {
     const login = provider === 'apple' ? loginWithApple : loginWithWechat
@@ -5122,6 +5216,45 @@ function AuthPanel({
         <UserRound size={18} />
         <h2>登录账户</h2>
       </div>
+      <form className="auth-sms-form" onSubmit={handleSmsLogin}>
+        <label>
+          <span>手机号</span>
+          <input
+            inputMode="tel"
+            placeholder="输入手机号"
+            type="tel"
+            value={phone}
+            onChange={(event) => setPhone(event.target.value)}
+          />
+        </label>
+        <label>
+          <span>验证码</span>
+          <div className="auth-code-row">
+            <input
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="6 位验证码"
+              value={code}
+              onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+            />
+            <button
+              type="button"
+              disabled={Boolean(activeProvider) || smsCooldown > 0}
+              onClick={handleSendSms}
+            >
+              {activeProvider === 'sms-code' ? '发送中' : smsCooldown > 0 ? `${smsCooldown}s` : '获取验证码'}
+            </button>
+          </div>
+        </label>
+        <button
+          className="primary-action auth-submit"
+          type="submit"
+          disabled={Boolean(activeProvider) || !phone.trim() || code.trim().length < 4}
+        >
+          {activeProvider === 'sms-login' ? '登录中...' : '手机号登录'}
+        </button>
+      </form>
+      <div className="auth-provider-divider"><span>其他登录方式</span></div>
       <div className="auth-provider-list">
         <button
           className="auth-provider-button is-wechat"
@@ -5132,22 +5265,14 @@ function AuthPanel({
           <MessageCircle size={19} />
           <span>{activeProvider === 'wechat' ? '正在唤起微信登录' : '使用微信登录'}</span>
         </button>
-        <button
-          className="auth-provider-button is-apple"
-          type="button"
-          disabled={Boolean(activeProvider)}
-          onClick={() => handleProviderLogin('apple')}
-        >
-          <Fingerprint size={19} />
-          <span>{activeProvider === 'apple' ? '正在唤起 Apple 登录' : '使用 Apple 登录'}</span>
-        </button>
       </div>
       <p className="auth-helper">
-        登录后会同步你的持仓、观察池、提醒规则和风险偏好。手机号验证码已取消，首版只保留微信和 Apple 登录。
+        登录后会同步你的持仓、观察池、提醒规则和风险偏好。Apple 登录先保留技术能力，等上架和开发者账号配置完成后再开启。
       </p>
       <div className="auth-status-strip" aria-label="登录配置状态">
+        <span>验证码登录</span>
         <span>微信审核中</span>
-        <span>Apple 保留入口</span>
+        <span>Apple 暂不显示</span>
       </div>
       {(authNotice || localNotice) && <p className="auth-notice">{localNotice || authNotice}</p>}
     </section>
