@@ -18,10 +18,12 @@ import requests
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 
 DB_PATH = Path(os.getenv("GUJING_DB_PATH", Path(__file__).with_name("gujing.db")))
+PUBLIC_DIR = Path(__file__).resolve().parents[1] / "public"
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 USING_POSTGRES = DATABASE_URL.startswith(("postgres://", "postgresql://"))
 APP_STARTED_AT = time.time()
@@ -6110,6 +6112,16 @@ def health() -> dict[str, str]:
     return {"status": "ok", "service": "gujing-api"}
 
 
+@app.get("/privacy.html", include_in_schema=False)
+def privacy_policy_page() -> FileResponse:
+    return public_page_response("privacy.html")
+
+
+@app.get("/support.html", include_in_schema=False)
+def support_page() -> FileResponse:
+    return public_page_response("support.html")
+
+
 @app.get("/api/system/readiness")
 def system_readiness_index() -> dict[str, Any]:
     return system_readiness_payload()
@@ -6825,6 +6837,23 @@ def render_service_url() -> str:
     return ""
 
 
+def public_page_response(filename: str) -> FileResponse:
+    path = PUBLIC_DIR / filename
+    if not path.exists() or path.parent != PUBLIC_DIR:
+        raise HTTPException(status_code=404, detail="page not found")
+    return FileResponse(path, media_type="text/html; charset=utf-8")
+
+
+def privacy_policy_url(service_url: str | None = None) -> str:
+    explicit_url = os.getenv("PRIVACY_POLICY_URL", "").strip()
+    if explicit_url:
+        return explicit_url
+    base_url = (service_url or render_service_url()).rstrip("/")
+    if base_url.startswith("https://") and (PUBLIC_DIR / "privacy.html").exists():
+        return f"{base_url}/privacy.html"
+    return ""
+
+
 def system_readiness_payload() -> dict[str, Any]:
     data_status = get_data_status()
     directory_status = get_directory_status()
@@ -6934,7 +6963,7 @@ def system_readiness_payload() -> dict[str, Any]:
 def launch_readiness_payload(checks: dict[str, Any]) -> dict[str, Any]:
     app_env = os.getenv("APP_ENV", "development")
     service_url = checks.get("deployment", {}).get("serviceUrl") or ""
-    privacy_url = os.getenv("PRIVACY_POLICY_URL", "").strip()
+    privacy_url = privacy_policy_url(service_url)
     cors_origins = checks.get("cors", {}).get("allowedOrigins", [])
     production_origins = [
         origin

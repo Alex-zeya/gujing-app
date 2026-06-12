@@ -90,6 +90,12 @@ class PortfolioFlowTest(unittest.TestCase):
             "INSERT INTO app_settings (key, payload) VALUES (%s, %s) ON CONFLICT(key) DO UPDATE SET payload = EXCLUDED.payload",
         )
 
+    def test_privacy_policy_url_defaults_to_render_page(self):
+        self.assertEqual(
+            self.backend.privacy_policy_url("https://gujing-api.onrender.com"),
+            "https://gujing-api.onrender.com/privacy.html",
+        )
+
     def test_buy_adjust_sell_and_remove_records_transactions(self):
         created = self.backend.portfolio_upsert(
             self.backend.PortfolioPayload(

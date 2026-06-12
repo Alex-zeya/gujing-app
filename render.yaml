@@ -24,7 +24,7 @@ services:
       - key: TUSHARE_TOKEN
         sync: false
       - key: PRIVACY_POLICY_URL
-        sync: false
+        value: https://gujing-api.onrender.com/privacy.html
       - key: ALIYUN_SMS_ACCESS_KEY_ID
         sync: false
       - key: ALIYUN_SMS_ACCESS_KEY_SECRET
