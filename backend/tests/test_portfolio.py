@@ -80,6 +80,16 @@ class PortfolioFlowTest(unittest.TestCase):
         self.assertEqual(cursor.calls[0][0], "INSERT INTO sample (a, b) VALUES (%s, %s)")
         self.assertEqual(cursor.calls[0][1], [(1, 2)])
 
+    def test_postgres_sql_translation_handles_app_settings_replace(self):
+        translated = self.backend.translate_sql_for_postgres(
+            "INSERT OR REPLACE INTO app_settings (key, payload) VALUES (?, ?)"
+        )
+
+        self.assertEqual(
+            translated,
+            "INSERT INTO app_settings (key, payload) VALUES (%s, %s) ON CONFLICT(key) DO UPDATE SET payload = EXCLUDED.payload",
+        )
+
     def test_buy_adjust_sell_and_remove_records_transactions(self):
         created = self.backend.portfolio_upsert(
             self.backend.PortfolioPayload(

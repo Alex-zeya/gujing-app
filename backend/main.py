@@ -588,6 +588,15 @@ def translate_sql_for_postgres(sql: str) -> str:
         )
         if "ON CONFLICT" not in translated.upper():
             translated += " ON CONFLICT(code) DO UPDATE SET payload = EXCLUDED.payload"
+    elif re.match(r"^INSERT\s+OR\s+REPLACE\s+INTO\s+app_settings\s*\(", translated, re.IGNORECASE):
+        translated = re.sub(
+            r"^INSERT\s+OR\s+REPLACE\s+INTO\s+app_settings",
+            "INSERT INTO app_settings",
+            translated,
+            flags=re.IGNORECASE,
+        )
+        if "ON CONFLICT" not in translated.upper():
+            translated += " ON CONFLICT(key) DO UPDATE SET payload = EXCLUDED.payload"
     elif re.match(r"^INSERT\s+OR\s+IGNORE\s+INTO\s+", translated, re.IGNORECASE):
         translated = re.sub(
             r"^INSERT\s+OR\s+IGNORE\s+INTO\s+",
