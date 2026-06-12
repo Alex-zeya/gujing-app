@@ -5535,21 +5535,22 @@ def ensure_stock_history(code: str, max_age_minutes: int = HISTORY_CACHE_MINUTES
         return stock
 
 
-def hydrate_stock_market_data(code: str, force_history: bool = False) -> dict[str, Any]:
+def hydrate_stock_market_data(code: str, force_history: bool = False, allow_network: bool = True) -> dict[str, Any]:
     clean = clean_code(code)
     ensure_stock_record(clean)
-    with suppress(Exception):
-        refresh_cached_quotes([clean])
-    stock = ensure_stock_history(clean, 0 if force_history else HISTORY_CACHE_MINUTES)
-    with suppress(Exception):
-        refresh_cached_quotes([clean])
-    with suppress(Exception):
-        stock_for_fundamental = get_stock_or_404(clean)
-        if fundamental_cache_is_stale(stock_for_fundamental):
-            try:
-                refresh_tushare_daily_basic(clean)
-            except Exception as error:
-                mark_fundamental_refresh_error(clean, error)
+    if allow_network:
+        with suppress(Exception):
+            refresh_cached_quotes([clean])
+        ensure_stock_history(clean, 0 if force_history else HISTORY_CACHE_MINUTES)
+        with suppress(Exception):
+            refresh_cached_quotes([clean])
+        with suppress(Exception):
+            stock_for_fundamental = get_stock_or_404(clean)
+            if fundamental_cache_is_stale(stock_for_fundamental):
+                try:
+                    refresh_tushare_daily_basic(clean)
+                except Exception as error:
+                    mark_fundamental_refresh_error(clean, error)
     stock = apply_analysis_score(apply_snapshot_history(get_stock_or_404(clean)))
     quality = stock_data_quality(stock)
     stock["dataQuality"] = quality
@@ -6518,8 +6519,8 @@ def stocks_search(keyword: str = "", q: str = "", full: bool = False, with_quote
 
 
 @app.get("/api/stocks/{code}")
-def stocks_show(code: str) -> dict[str, Any]:
-    return sanitize_display_text(hydrate_stock_market_data(code))
+def stocks_show(code: str, refresh: bool = False) -> dict[str, Any]:
+    return sanitize_display_text(hydrate_stock_market_data(code, allow_network=refresh))
 
 
 @app.post("/api/stocks/{code}/history/refresh")
@@ -6574,8 +6575,8 @@ def stocks_fundamentals_refresh(code: str) -> dict[str, Any]:
 
 
 @app.get("/api/stocks/{code}/kline")
-def stocks_kline(code: str) -> dict[str, Any]:
-    stock = hydrate_stock_market_data(code)
+def stocks_kline(code: str, refresh: bool = False) -> dict[str, Any]:
+    stock = hydrate_stock_market_data(code, allow_network=refresh)
     return sanitize_display_text({
         "code": stock["code"],
         "name": stock["name"],

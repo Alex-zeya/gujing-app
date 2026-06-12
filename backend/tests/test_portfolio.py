@@ -505,6 +505,29 @@ class PortfolioFlowTest(unittest.TestCase):
 
         self.assertTrue(any(match["code"] == "000001" for match in matches))
 
+    def test_stock_detail_and_kline_are_cache_first_by_default(self):
+        original_refresh = self.backend.refresh_cached_quotes
+        original_history = self.backend.ensure_stock_history
+
+        def fail_refresh(*args, **kwargs):
+            raise AssertionError("stock detail should not refresh quotes unless requested")
+
+        def fail_history(*args, **kwargs):
+            raise AssertionError("stock detail should not refresh history unless requested")
+
+        self.backend.refresh_cached_quotes = fail_refresh
+        self.backend.ensure_stock_history = fail_history
+        try:
+            detail = self.backend.stocks_show("000001")
+            kline = self.backend.stocks_kline("000001")
+        finally:
+            self.backend.refresh_cached_quotes = original_refresh
+            self.backend.ensure_stock_history = original_history
+
+        self.assertEqual(detail["code"], "000001")
+        self.assertEqual(kline["code"], "000001")
+        self.assertTrue(kline["candles"])
+
     def test_mock_sms_returns_dev_code_in_production_mode(self):
         original_env = self.backend.os.environ.get("APP_ENV")
         original_sms_provider = self.backend.SMS_PROVIDER
