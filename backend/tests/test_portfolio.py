@@ -169,7 +169,10 @@ class PortfolioFlowTest(unittest.TestCase):
         self.assertEqual(summary["realizedGainRate"], 20)
         self.assertEqual(summary["holdingCost"], 600)
         self.assertEqual(summary["recoveredPrincipal"], 400)
-        self.assertEqual(summary["withdrawableCash"], 400)
+        self.assertEqual(summary["availableCash"], 480)
+        self.assertEqual(summary["withdrawableCash"], 480)
+        self.assertEqual(summary["accountValue"], summary["marketValue"] + 480)
+        self.assertEqual(summary["capitalUtilizationRate"], 60)
         self.assertIn("移动平均成本", summary["method"])
         self.assertEqual(summary["sellCount"], 1)
 

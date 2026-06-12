@@ -873,16 +873,21 @@ function buildCapitalTips(capital, portfolio) {
   const realizedGain = Number(capital.realizedGain ?? 0)
   const totalBuyAmount = Number(capital.totalBuyAmount ?? 0)
   const totalSellAmount = Number(capital.totalSellAmount ?? 0)
+  const accountValue = Number(capital.accountValue ?? 0)
+  const availableCash = Number(capital.availableCash ?? totalSellAmount)
   const topLoss = [...portfolio].sort((a, b) => (a.totalGainRate ?? 0) - (b.totalGainRate ?? 0))[0]
 
   if (!portfolio.length) {
     return ['先添加一只持仓，系统会自动拆分本金、浮盈和已卖出收益。']
   }
+  if (accountValue > 0) {
+    tips.push(`账户估算资产 ${currency(accountValue)}，由当前市值和卖出回收现金组成。`)
+  }
   if (holdingCost > 0) {
     tips.push(`当前还有 ${currency(holdingCost)} 本金在持仓里，对应市值 ${currency(marketValue)}。`)
   }
   if (totalSellAmount > 0) {
-    tips.push(`已经卖出回收 ${currency(totalSellAmount)}，其中已实现收益 ${currency(realizedGain)}。`)
+    tips.push(`已经卖出回收 ${currency(availableCash)}，其中已实现收益 ${currency(realizedGain)}。`)
   }
   if (unrealizedGain < 0 && topLoss) {
     tips.push(`${topLoss.name} 是当前拖累较明显的持仓，先复盘买入理由和仓位。`)
@@ -3741,8 +3746,12 @@ function PortfolioView({
   const ledgerPortfolioReturnRate = capital.portfolioReturnRate ?? ledgerTotalGainRate
   const ledgerRealizedGainRate = capital.realizedGainRate ?? 0
   const ledgerDayGain = capital.dayGain ?? portfolioDayGain
+  const ledgerAccountValue = capital.accountValue ?? ledgerMarketValue + Number(capital.totalSellAmount ?? 0)
+  const ledgerTotalBuyAmount = capital.totalBuyAmount ?? ledgerHoldingCost
+  const ledgerAvailableCash = capital.availableCash ?? capital.totalSellAmount ?? 0
   const netCashInvested = capital.netCashInvested ?? ledgerHoldingCost
   const recoveredPrincipal = capital.recoveredPrincipal ?? 0
+  const capitalUtilizationRate = capital.capitalUtilizationRate ?? (ledgerTotalBuyAmount ? ledgerHoldingCost / ledgerTotalBuyAmount * 100 : 0)
   const capitalTips = buildCapitalTips(capital, portfolio)
   const cashMultiple = capital.marketToCostRatio ?? (ledgerHoldingCost ? ledgerMarketValue / ledgerHoldingCost : 0)
   const healthScore = Math.max(42, 92 - concentration.ratio + Math.round(portfolioDayGain / 1000))
@@ -3827,9 +3836,11 @@ function PortfolioView({
   return (
     <div className="view-stack">
       <section className="portfolio-summary">
-        <p className="caption">模拟持仓</p>
-        <strong>{currency(totalAmount)}</strong>
+        <p className="caption">持仓账户</p>
+        <strong>{currency(ledgerAccountValue)}</strong>
         <span>
+          当前市值 {currency(ledgerMarketValue)}
+          {' '}·{' '}
           今日盈亏{' '}
           <em className={portfolioDayGain >= 0 ? 'is-up' : 'is-down'}>
             {currency(portfolioDayGain)}
@@ -3879,8 +3890,8 @@ function PortfolioView({
         </div>
         <div className="capital-grid">
           <div>
-            <span>持仓本金</span>
-            <strong>{currency(ledgerHoldingCost)}</strong>
+            <span>总投入本金</span>
+            <strong>{currency(ledgerTotalBuyAmount)}</strong>
           </div>
           <div>
             <span>当前市值</span>
@@ -3893,11 +3904,9 @@ function PortfolioView({
             </strong>
           </div>
           <div>
-            <span>已实现收益</span>
-            <strong className={ledgerRealizedGain >= 0 ? 'is-up' : 'is-down'}>
-              {currency(ledgerRealizedGain)}
-            </strong>
-            <em>{formatPercent(ledgerRealizedGainRate)}</em>
+            <span>卖出回收现金</span>
+            <strong>{currency(ledgerAvailableCash)}</strong>
+            <em>已实现 {formatPercent(ledgerRealizedGainRate)}</em>
           </div>
         </div>
         <div className="capital-tips">
@@ -3924,9 +3933,9 @@ function PortfolioView({
           </div>
         </div>
         <div className="capital-foot">
-          <span>今日盈亏</span>
+          <span>本金使用率 {formatPercent(capitalUtilizationRate)}</span>
           <strong className={ledgerDayGain >= 0 ? 'is-up' : 'is-down'}>
-            {currency(ledgerDayGain)}
+            今日 {currency(ledgerDayGain)}
           </strong>
           <em>市值/本金 {cashMultiple ? cashMultiple.toFixed(2) : '0.00'}x</em>
         </div>

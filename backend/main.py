@@ -8182,7 +8182,10 @@ def portfolio_transaction_ledger(user_id: str, items: list[dict[str, Any]]) -> d
     recovered_principal = round(released_cost, 2)
     realized_gain_rate = round(realized_gain / released_cost * 100, 2) if released_cost else 0
     total_return_base = holding_cost + released_cost
+    account_value = round(market_value + total_sell_amount, 2)
+    capital_utilization_rate = round(holding_cost / total_buy_amount * 100, 2) if total_buy_amount else 0
     return {
+        "accountValue": account_value,
         "holdingCost": holding_cost,
         "marketValue": market_value,
         "unrealizedGain": unrealized_gain,
@@ -8193,10 +8196,12 @@ def portfolio_transaction_ledger(user_id: str, items: list[dict[str, Any]]) -> d
         "totalBuyAmount": round(total_buy_amount, 2),
         "totalSellAmount": round(total_sell_amount, 2),
         "netCashInvested": net_cash_invested,
+        "availableCash": round(total_sell_amount, 2),
         "principalInUse": holding_cost,
         "cashRecovered": round(total_sell_amount, 2),
         "recoveredPrincipal": recovered_principal,
-        "withdrawableCash": round(max(0, total_sell_amount - realized_gain), 2),
+        "withdrawableCash": round(total_sell_amount, 2),
+        "capitalUtilizationRate": capital_utilization_rate,
         "totalGainRate": round(total_gain / total_buy_amount * 100, 2) if total_buy_amount else 0,
         "portfolioReturnRate": round(total_gain / total_return_base * 100, 2) if total_return_base else 0,
         "unrealizedGainRate": round(unrealized_gain / holding_cost * 100, 2) if holding_cost else 0,
@@ -8204,7 +8209,7 @@ def portfolio_transaction_ledger(user_id: str, items: list[dict[str, Any]]) -> d
         "transactionCount": len(rows),
         "buyCount": buy_count,
         "sellCount": sell_count,
-        "method": "移动平均成本法估算，卖出收益按卖出金额减去对应释放成本计算。",
+        "method": "移动平均成本法估算：买入形成投入本金，卖出先按平均成本释放本金，卖出金额减释放成本计入已实现收益；账户估算资产=当前市值+卖出回收现金。",
     }
 
 
