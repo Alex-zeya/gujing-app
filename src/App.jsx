@@ -22,6 +22,7 @@ import {
 import './App.css'
 
 const GujingAppleSignIn = registerPlugin('GujingAppleSignIn')
+const GujingWechatLogin = registerPlugin('GujingWechatLogin')
 
 function isNativeIosApp() {
   return Capacitor.getPlatform?.() === 'ios' && Capacitor.isNativePlatform?.()
@@ -1797,17 +1798,47 @@ function App() {
 
   async function loginWithWechat() {
     try {
+      const status = await apiJson('/api/auth/wechat/status', { skipAuth: true })
+      if (!status.configured) {
+        setAuthNotice('微信登录需要先完成微信开放平台移动应用配置，并在 Render 填入 AppID 和 Secret。')
+        throw new Error('wechat server not configured')
+      }
+
+      if (!isNativeIosApp()) {
+        setAuthNotice('微信登录需要在 iPhone App 里使用；网页预览只展示上线入口。')
+        throw new Error('wechat native login unavailable in web preview')
+      }
+
+      const nativeStatus = await GujingWechatLogin.status()
+      if (!nativeStatus?.installed) {
+        setAuthNotice('当前设备未检测到微信，请安装微信后再试。')
+        throw new Error('wechat not installed')
+      }
+
+      const wechatCredential = await GujingWechatLogin.login()
+      if (!wechatCredential?.code) {
+        throw new Error('微信登录未返回授权 code')
+      }
+
       const result = await apiJson('/api/auth/wechat/login', {
         method: 'POST',
         skipAuth: true,
-        body: JSON.stringify({ code: 'wechat_app_code_placeholder' }),
+        body: JSON.stringify(wechatCredential),
       })
       return finishLogin(result, '微信登录成功')
     } catch (error) {
       const message = String(error?.message ?? '')
-      setAuthNotice(message.includes('501')
-        ? '微信登录需要先在微信开放平台创建移动应用，并配置 AppID 和 Secret。'
-        : '微信登录暂时不可用，请稍后再试。')
+      if (message.includes('web preview')) {
+        setAuthNotice('微信登录需要在 iPhone App 里使用；网页预览只展示上线入口。')
+      } else if (message.includes('not installed')) {
+        setAuthNotice('当前设备未检测到微信，请安装微信后再试。')
+      } else if (message.includes('not configured') || message.includes('501')) {
+        setAuthNotice('微信登录需要先完成微信开放平台移动应用配置，并在 Render 填入 AppID 和 Secret。')
+      } else if (message.includes('OpenSDK')) {
+        setAuthNotice('微信登录原生 SDK 还未加入 Xcode，等 AppID 审核通过后接入。')
+      } else {
+        setAuthNotice('微信登录暂时不可用，请稍后再试。')
+      }
       throw error
     }
   }
@@ -4967,6 +4998,12 @@ function AuthPanel({
         setLocalNotice('Apple 登录需要在 iPhone App 里使用；网页预览只展示上线入口。')
       } else if (message.includes('已取消')) {
         setLocalNotice('已取消 Apple 登录。')
+      } else if (message.includes('wechat native login unavailable')) {
+        setLocalNotice('微信登录需要在 iPhone App 里使用；网页预览只展示上线入口。')
+      } else if (message.includes('wechat not installed')) {
+        setLocalNotice('当前设备未检测到微信，请安装微信后再试。')
+      } else if (message.includes('wechat server not configured') || message.includes('OpenSDK')) {
+        setLocalNotice('微信登录需要先完成微信开放平台移动应用配置；当前先保留入口。')
       } else {
         setLocalNotice(provider === 'apple'
           ? 'Apple 登录需要先在 Apple Developer 和 Xcode 开启 Sign in with Apple。'
@@ -5021,7 +5058,7 @@ function AuthPanel({
         </button>
       </div>
       <p className="auth-helper">
-        首版取消短信验证码，减少资质和短信到达率问题。Apple 登录用于 App Store 审核，微信登录用于国内用户。
+        首版取消短信验证码，减少资质和短信到达率问题。Apple 登录先保留，微信登录会在开放平台移动应用通过后启用。
       </p>
       <button className="auth-secondary-link" type="button" onClick={() => setLocalNotice('测试入口已隐藏，正式版只保留 Apple 和微信登录。')}>
         内测账号说明

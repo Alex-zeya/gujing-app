@@ -500,7 +500,9 @@ class AppleLoginPayload(BaseModel):
 
 
 class WechatLoginPayload(BaseModel):
-    code: str = Field(min_length=3, max_length=128)
+    code: str = Field(min_length=3, max_length=512)
+    state: str | None = Field(default=None, max_length=128)
+    source: str | None = Field(default=None, max_length=32)
 
 
 class RefreshPayload(BaseModel):
@@ -6787,6 +6789,31 @@ def exchange_wechat_code(code: str) -> dict[str, Any]:
     return payload
 
 
+def wechat_login_status_payload() -> dict[str, Any]:
+    app_id = os.getenv("WECHAT_APP_ID", "").strip()
+    app_secret = os.getenv("WECHAT_APP_SECRET", "").strip()
+    universal_link = os.getenv("WECHAT_UNIVERSAL_LINK", "").strip()
+    pending = [
+        key
+        for key, value in (
+            ("WECHAT_APP_ID", app_id),
+            ("WECHAT_APP_SECRET", app_secret),
+        )
+        if not value
+    ]
+    masked_app_id = f"{app_id[:4]}...{app_id[-4:]}" if len(app_id) > 8 else ""
+    return {
+        "configured": not pending,
+        "nativeRequired": True,
+        "appIdConfigured": bool(app_id),
+        "appIdPreview": masked_app_id,
+        "secretConfigured": bool(app_secret),
+        "universalLinkConfigured": bool(universal_link),
+        "pendingEnv": pending,
+        "message": "微信登录已配置后端参数。" if not pending else "微信登录需要先配置微信开放平台移动应用参数。",
+    }
+
+
 @app.get("/api/auth/me")
 def auth_me(authorization: str | None = Header(default=None)) -> dict[str, Any]:
     token = bearer_token_from_header(authorization)
@@ -6953,6 +6980,11 @@ def auth_wechat_login(
     session = create_auth_token(profile["id"], user_agent, x_device_name)
     cleanup_expired_sessions()
     return auth_payload(profile["id"], session["token"], session["expiresAt"])
+
+
+@app.get("/api/auth/wechat/status")
+def auth_wechat_status() -> dict[str, Any]:
+    return wechat_login_status_payload()
 
 
 @app.post("/api/auth/logout")
@@ -7225,12 +7257,8 @@ def system_readiness_payload() -> dict[str, Any]:
             "pendingEnv": ["APPLE_SIGN_IN_CLIENT_ID 或 APPLE_BUNDLE_ID"] if not apple_sign_in_audiences() else [],
         },
         "wechat": {
-            "ok": bool(os.getenv("WECHAT_APP_ID") and os.getenv("WECHAT_APP_SECRET")),
-            "pendingEnv": [
-                key
-                for key in ("WECHAT_APP_ID", "WECHAT_APP_SECRET")
-                if not os.getenv(key)
-            ],
+            "ok": bool(wechat_login_status_payload()["configured"]),
+            "pendingEnv": wechat_login_status_payload()["pendingEnv"],
         },
         "tushare": {
             "ok": bool(get_tushare_token()),

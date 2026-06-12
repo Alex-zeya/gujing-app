@@ -1020,6 +1020,32 @@ class PortfolioFlowTest(unittest.TestCase):
         self.assertIn("token", payload)
         self.assertEqual(payload["profile"]["displayName"], "微信用户")
 
+    def test_wechat_status_reports_configuration_without_secret(self):
+        original_env = {
+            "WECHAT_APP_ID": self.backend.os.environ.get("WECHAT_APP_ID"),
+            "WECHAT_APP_SECRET": self.backend.os.environ.get("WECHAT_APP_SECRET"),
+        }
+        try:
+            self.backend.os.environ.pop("WECHAT_APP_ID", None)
+            self.backend.os.environ.pop("WECHAT_APP_SECRET", None)
+            missing = self.backend.auth_wechat_status()
+            self.assertFalse(missing["configured"])
+            self.assertEqual(missing["pendingEnv"], ["WECHAT_APP_ID", "WECHAT_APP_SECRET"])
+
+            self.backend.os.environ["WECHAT_APP_ID"] = "wx1234567890abcd"
+            self.backend.os.environ["WECHAT_APP_SECRET"] = "secret-never-return"
+            configured = self.backend.auth_wechat_status()
+            self.assertTrue(configured["configured"])
+            self.assertEqual(configured["pendingEnv"], [])
+            self.assertEqual(configured["appIdPreview"], "wx12...abcd")
+            self.assertNotIn("secret-never-return", str(configured))
+        finally:
+            for key, value in original_env.items():
+                if value is None:
+                    self.backend.os.environ.pop(key, None)
+                else:
+                    self.backend.os.environ[key] = value
+
 
 if __name__ == "__main__":
     unittest.main()

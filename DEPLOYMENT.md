@@ -44,7 +44,8 @@ Apple 登录上线前需要：
 1. 微信开放平台创建移动应用。
 2. 配置 iOS Bundle ID、Universal Link、URL Scheme。
 3. Render 设置 `WECHAT_APP_ID` 和 `WECHAT_APP_SECRET`。
-4. iOS 原生层拿到微信授权 `code` 后传给 `POST /api/auth/wechat/login`。
+4. iOS App 已预留 `GujingWechatLogin` 原生桥接和微信安装检测；拿到微信开放平台 AppID 后，再把 WeChat OpenSDK 接入 Xcode。
+5. iOS 原生层拿到微信授权 `code` 后传给 `POST /api/auth/wechat/login`。
 
 ## 真实短信登录
 

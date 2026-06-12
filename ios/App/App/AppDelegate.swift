@@ -54,6 +54,7 @@ class GujingBridgeViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         super.capacitorDidLoad()
         bridge?.registerPluginInstance(GujingAppleSignInPlugin())
+        bridge?.registerPluginInstance(GujingWechatLoginPlugin())
     }
 }
 
@@ -141,5 +142,28 @@ class GujingAppleSignInPlugin: CAPPlugin, CAPBridgedPlugin, ASAuthorizationContr
     @available(iOS 13.0, *)
     func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
         return bridge?.viewController?.view.window ?? ASPresentationAnchor()
+    }
+}
+
+@objc(GujingWechatLoginPlugin)
+class GujingWechatLoginPlugin: CAPPlugin, CAPBridgedPlugin {
+    let identifier = "GujingWechatLoginPlugin"
+    let jsName = "GujingWechatLogin"
+    let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "status", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "login", returnType: CAPPluginReturnPromise)
+    ]
+
+    @objc func status(_ call: CAPPluginCall) {
+        let wechatURL = URL(string: "weixin://")!
+        call.resolve([
+            "installed": UIApplication.shared.canOpenURL(wechatURL),
+            "sdkReady": false,
+            "message": "微信 OpenSDK 尚未接入，当前只能检测是否安装微信。"
+        ])
+    }
+
+    @objc func login(_ call: CAPPluginCall) {
+        call.reject("微信 OpenSDK 尚未接入。请先在微信开放平台通过移动应用审核，拿到 AppID 后再加入 iOS SDK。")
     }
 }
