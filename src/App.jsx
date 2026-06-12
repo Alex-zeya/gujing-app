@@ -565,7 +565,18 @@ function displayStockPrice(stock) {
 }
 
 function displayStockMove(stock) {
-  return hasLivePrice(stock) ? formatPercent(stock.performance.day) : '同步中'
+  const dayMove = Number(stock?.performance?.day ?? 0)
+  return hasLivePrice(stock) ? formatPercent(dayMove) : '同步中'
+}
+
+function stockDayMove(stock) {
+  const value = Number(stock?.performance?.day ?? 0)
+  return Number.isFinite(value) ? value : 0
+}
+
+function stockMonthMove(stock) {
+  const value = Number(stock?.performance?.month ?? 0)
+  return Number.isFinite(value) ? value : 0
 }
 
 function StockPriceLine({ stock, compact = false }) {
@@ -798,13 +809,15 @@ function buildStockDecision(stock) {
 function fallbackAnalysisScore(stock) {
   const decision = buildStockDecision(stock)
   const total = Number(stock.score ?? 60)
+  const dayMove = stockDayMove(stock)
+  const monthMove = stockMonthMove(stock)
   return {
     total,
     stance: decision.holdingAdvice,
     reasons: [decision.trendView],
     factors: [
-      { name: '短期动量', score: Math.max(0, Math.min(100, 50 + stock.performance.day * 3)), text: `今日 ${displayStockMove(stock)}` },
-      { name: '趋势质量', score: Math.max(0, Math.min(100, 50 + stock.performance.month * 2)), text: `近一月 ${formatPercent(stock.performance.month)}` },
+      { name: '短期动量', score: Math.max(0, Math.min(100, 50 + dayMove * 3)), text: `今日 ${displayStockMove(stock)}` },
+      { name: '趋势质量', score: Math.max(0, Math.min(100, 50 + monthMove * 2)), text: `近一月 ${formatPercent(monthMove)}` },
       { name: '数据完整度', score: stock.dataCoverage?.history ? 80 : 45, text: stock.dataCoverage?.history ? '已接入历史K线' : '历史数据会随每日缓存逐步积累' },
     ],
   }
@@ -1516,7 +1529,7 @@ function App() {
           shares,
           costPrice,
           marketValue: amount,
-          dayGain: amount * (stock.performance.day / 100),
+          dayGain: amount * (stockDayMove(stock) / 100),
           totalGain: 0,
           totalGainRate: 0,
           positionRatio: 0,
@@ -2268,7 +2281,7 @@ function HomeView({
 }) {
   const activeRecommendations = recommendedStocks.filter((stock) => !dismissedRecommendationCodes.includes(stock.code))
   const recommendedStock = activeRecommendations[0]
-    ?? [...marketStocks].sort((a, b) => b.performance.month - a.performance.month)[0]
+    ?? [...marketStocks].sort((a, b) => stockMonthMove(b) - stockMonthMove(a))[0]
     ?? stocks['600519']
   const recommendationDecision = buildStockDecision(recommendedStock)
   const isWatching = watchlist.includes(recommendedStock.code)
@@ -2289,8 +2302,8 @@ function HomeView({
             <StockPriceLine stock={recommendedStock} />
           </div>
           <div className="price-block">
-            <strong className={trendClass(recommendedStock.performance.day)}>
-              {formatPercent(recommendedStock.performance.day)}
+            <strong className={trendClass(stockDayMove(recommendedStock))}>
+              {formatPercent(stockDayMove(recommendedStock))}
             </strong>
             <span>今日涨跌</span>
           </div>
@@ -2555,7 +2568,7 @@ function PriceChart({ stock }) {
 }
 
 function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist }) {
-  const monthMove = stock.performance.month
+  const monthMove = stockMonthMove(stock)
   const decision = buildStockDecision(stock)
   const analysisScore = stock.analysisScore ?? fallbackAnalysisScore(stock)
   const forecast = analysisScore.forecast
@@ -3133,14 +3146,14 @@ function DiscoverView({
   const pricedMarketStocks = marketStocks.filter(hasLivePrice)
   const displayMarketStocks = pricedMarketStocks.length >= 10 ? pricedMarketStocks : marketStocks
   const rankedStocks = [...displayMarketStocks].sort(
-    (a, b) => b.performance.day - a.performance.day,
+    (a, b) => stockDayMove(b) - stockDayMove(a),
   )
   const topGainers = rankedStocks.slice(0, 5)
   const topLosers = [...displayMarketStocks]
-    .sort((a, b) => a.performance.day - b.performance.day)
+    .sort((a, b) => stockDayMove(a) - stockDayMove(b))
     .slice(0, 5)
   const maxMove = Math.max(
-    ...[...topGainers, ...topLosers].map((stock) => Math.abs(stock.performance.day)),
+    ...[...topGainers, ...topLosers].map((stock) => Math.abs(stockDayMove(stock))),
     1,
   )
   const leader = rankedStocks[0]
@@ -3150,8 +3163,8 @@ function DiscoverView({
   ]
   const focusStocks = Array.from(new Map(focusPool.map((stock) => [stock.code, stock])).values())
     .sort((a, b) => {
-      const aScore = a.performance.day * 1.6 + a.performance.month * 0.8 + a.score / 20
-      const bScore = b.performance.day * 1.6 + b.performance.month * 0.8 + b.score / 20
+      const aScore = stockDayMove(a) * 1.6 + stockMonthMove(a) * 0.8 + a.score / 20
+      const bScore = stockDayMove(b) * 1.6 + stockMonthMove(b) * 0.8 + b.score / 20
       return bScore - aScore
     })
     .slice(0, 10)
@@ -3283,12 +3296,12 @@ function DiscoverView({
                   <strong>{stock.code}</strong>
                   <b>{stock.name}</b>
                 </div>
-                <em className={trendClass(stock.performance.day)}>
+                <em className={trendClass(stockDayMove(stock))}>
                   {displayStockMove(stock)}
                 </em>
                 <p>
                   <span>现价 {displayStockPrice(stock)}</span>
-                  <span>{stock.performance.day >= 0 ? '今日上涨' : '今日下跌'}</span>
+                  <span>{stockDayMove(stock) >= 0 ? '今日上涨' : '今日下跌'}</span>
                 </p>
               </button>
             ))}
@@ -3342,7 +3355,7 @@ function DiscoverView({
                   <strong>{stock.name}</strong>
                   <span>{stock.code} · {stock.industry}</span>
                 </div>
-                <em className={trendClass(stock.performance.day)}>
+                <em className={trendClass(stockDayMove(stock))}>
                   {displayStockMove(stock)}
                 </em>
               </button>
@@ -3405,7 +3418,7 @@ function MoverGroup({ label, stocks, maxMove, onSelect }) {
     <div className="mover-group">
       <span>{label}</span>
       {stocks.map((stock) => {
-        const move = stock.performance.day
+        const move = stockDayMove(stock)
         const width = Math.max((Math.abs(move) / maxMove) * 100, 8)
         return (
           <button
@@ -3433,12 +3446,13 @@ function MoverGroup({ label, stocks, maxMove, onSelect }) {
 function Sparkline({ points, positive }) {
   const width = 74
   const height = 28
-  const min = Math.min(...points)
-  const max = Math.max(...points)
+  const values = Array.isArray(points) && points.length > 1 ? points : [0, 0]
+  const min = Math.min(...values)
+  const max = Math.max(...values)
   const range = max - min || 1
-  const coordinates = points
+  const coordinates = values
     .map((point, index) => {
-      const x = (index / (points.length - 1)) * width
+      const x = (index / (values.length - 1)) * width
       const y = height - ((point - min) / range) * height
       return `${x.toFixed(1)},${y.toFixed(1)}`
     })
@@ -3641,7 +3655,7 @@ function KLineView({ stock, setActiveTab, returnTab, candles }) {
         <div className="kline-meta">
           <div>
             <span>今日涨跌</span>
-            <strong className={trendClass(stock.performance.day)}>
+            <strong className={trendClass(stockDayMove(stock))}>
               {displayStockMove(stock)}
             </strong>
           </div>
@@ -4148,7 +4162,7 @@ function PortfolioView({
                   <strong>{stock.name}</strong>
                   <span>{stock.code} · {stock.industry}</span>
                 </div>
-                <em className={trendClass(stock.performance.day)}>
+                <em className={trendClass(stockDayMove(stock))}>
                   {displayStockMove(stock)}
                 </em>
               </button>
@@ -5177,6 +5191,7 @@ function WatchView({
           <div className="watch-list">
             {watchedStocks.map((stock) => {
               const watchDecision = buildStockDecision(stock)
+              const dayMove = Number(stock.performance?.day ?? 0)
               return (
               <article className="watch-card" key={stock.code}>
                 <button
@@ -5198,8 +5213,8 @@ function WatchView({
                   <ChevronRight size={18} />
                 </button>
                 <div className="watch-market">
-                  <Sparkline points={stock.sparkline} positive={stock.performance.day >= 0} />
-                  <strong className={`watch-change ${trendClass(stock.performance.day)}`}>
+                  <Sparkline points={stock.sparkline} positive={dayMove >= 0} />
+                  <strong className={`watch-change ${trendClass(dayMove)}`}>
                     {displayStockMove(stock)}
                   </strong>
                   <span>今日涨跌</span>
