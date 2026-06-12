@@ -6492,9 +6492,36 @@ def search_result_summary(stock: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def existing_stock_payloads(codes: list[str]) -> dict[str, dict[str, Any]]:
+    clean_codes = [clean_code(code) for code in codes if clean_code(code)]
+    if not clean_codes:
+        return {}
+    placeholders = ", ".join("?" for _ in clean_codes)
+    with connect() as db:
+        rows = db.execute(
+            f"SELECT code, payload FROM stocks WHERE code IN ({placeholders})",
+            clean_codes,
+        ).fetchall()
+    return {row["code"]: sanitize_display_text(from_json(row["payload"])) for row in rows}
+
+
+def fast_search_summaries(keyword: str, limit: int = 25) -> list[dict[str, Any]]:
+    rows = stock_directory_rows(keyword=keyword, limit=limit)
+    if not rows:
+        return [search_result_summary(stock) for stock in search_stocks(keyword)[:limit]]
+    existing = existing_stock_payloads([row["code"] for row in rows])
+    summaries: list[dict[str, Any]] = []
+    for row in rows[:limit]:
+        stock = existing.get(row["code"]) or build_stock_from_directory(row["code"], row["name"], row["industry"])
+        summaries.append(search_result_summary(stock))
+    return summaries
+
+
 @app.get("/api/stocks/search")
 def stocks_search(keyword: str = "", q: str = "", full: bool = False, with_quotes: bool = False) -> list[dict[str, Any]]:
     search_term = (keyword or q).strip()
+    if search_term and not full and not with_quotes:
+        return fast_search_summaries(search_term)
     results = search_stocks(search_term)
     if search_term and not results:
         existing_codes = {stock["code"] for stock in results}

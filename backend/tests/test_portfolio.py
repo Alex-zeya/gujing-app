@@ -492,18 +492,28 @@ class PortfolioFlowTest(unittest.TestCase):
         self.assertTrue(any(match["code"] == "123456" for match in q_matches))
 
     def test_stock_search_is_fast_by_default_without_quote_refresh(self):
+        self.backend.upsert_stock_directory(
+            [{"code": "123457", "name": "快速电气", "industry": "电气设备"}],
+            "test",
+        )
         original_refresh = self.backend.refresh_cached_quotes
+        original_directory_matches = self.backend.directory_matches
 
         def fail_refresh(*args, **kwargs):
             raise AssertionError("keyword search should not block on quote refresh by default")
 
+        def fail_directory_matches(*args, **kwargs):
+            raise AssertionError("keyword search suggestions should use the lightweight directory path")
+
         self.backend.refresh_cached_quotes = fail_refresh
+        self.backend.directory_matches = fail_directory_matches
         try:
-            matches = self.backend.stocks_search("平安")
+            matches = self.backend.stocks_search("快速电气")
         finally:
             self.backend.refresh_cached_quotes = original_refresh
+            self.backend.directory_matches = original_directory_matches
 
-        self.assertTrue(any(match["code"] == "000001" for match in matches))
+        self.assertTrue(any(match["code"] == "123457" for match in matches))
 
     def test_stock_detail_and_kline_are_cache_first_by_default(self):
         original_refresh = self.backend.refresh_cached_quotes
