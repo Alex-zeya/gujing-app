@@ -6334,6 +6334,16 @@ def terms_page() -> FileResponse:
     return public_page_response("terms.html")
 
 
+@app.get("/.well-known/apple-app-site-association", include_in_schema=False)
+def apple_app_site_association_well_known() -> dict[str, Any]:
+    return apple_app_site_association_payload()
+
+
+@app.get("/apple-app-site-association", include_in_schema=False)
+def apple_app_site_association_root() -> dict[str, Any]:
+    return apple_app_site_association_payload()
+
+
 @app.get("/api/system/readiness")
 def system_readiness_index() -> dict[str, Any]:
     return system_readiness_payload()
@@ -7262,6 +7272,30 @@ def privacy_policy_url(service_url: str | None = None) -> str:
     if base_url.startswith("https://") and (PUBLIC_DIR / "privacy.html").exists():
         return f"{base_url}/privacy.html"
     return ""
+
+
+def apple_app_site_association_payload() -> dict[str, Any]:
+    team_id = os.getenv("APPLE_TEAM_ID", "GWG5T68CKF").strip()
+    bundle_id = os.getenv("APPLE_BUNDLE_ID", "com.zeyawang.gujing").strip()
+    app_id = f"{team_id}.{bundle_id}" if team_id and bundle_id else bundle_id
+    return {
+        "applinks": {
+            "apps": [],
+            "details": [
+                {
+                    "appIDs": [app_id],
+                    "components": [
+                        {
+                            "/": "/app/*",
+                            "comment": "股镜 App Universal Links，用于微信授权回跳和 App 内打开。",
+                        }
+                    ],
+                    "appID": app_id,
+                    "paths": ["/app/*"],
+                }
+            ],
+        }
+    }
 
 
 def system_readiness_payload() -> dict[str, Any]:

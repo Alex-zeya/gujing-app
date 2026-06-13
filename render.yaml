@@ -57,6 +57,8 @@ services:
         sync: false
       - key: WECHAT_APP_SECRET
         sync: false
+      - key: WECHAT_UNIVERSAL_LINK
+        value: https://gujing-api.onrender.com/app/
       - key: APNS_KEY_ID
         sync: false
       - key: APNS_TEAM_ID
