@@ -1399,7 +1399,19 @@ def get_directory_status() -> dict[str, Any]:
         count_row = db.execute("SELECT COUNT(*) AS count FROM stock_directory").fetchone()
     count = int(count_row["count"] or 0) if count_row else 0
     base = from_json(row["payload"]) if row else DEFAULT_DIRECTORY_STATUS
-    return {**base, "count": count or int(base.get("count") or 0)}
+    status = {**base, "count": count or int(base.get("count") or 0)}
+    if (
+        status.get("mode") == "seed"
+        and int(status.get("count") or 0) >= MIN_A_STOCK_DIRECTORY_COUNT
+        and status.get("lastRefresh")
+    ):
+        status = {
+            **status,
+            "mode": "cached",
+            "source": status.get("source") or "stock_directory_cache",
+            "message": status.get("message") or f"已缓存 A股股票名称目录，当前可搜索 {status.get('count')} 只。",
+        }
+    return status
 
 
 def stock_directory_is_stale(max_age_minutes: int = DIRECTORY_REFRESH_MINUTES) -> bool:
@@ -1485,8 +1497,9 @@ def refresh_stock_directory(force: bool = False) -> dict[str, Any]:
     count = upsert_stock_directory(items, source)
     STOCK_DIRECTORY_CACHE.clear()
     total_count = get_directory_status().get("count", 0)
+    has_full_cache = int(total_count or count or 0) >= MIN_A_STOCK_DIRECTORY_COUNT
     status = {
-        "mode": "live" if source.startswith("akshare") else "seed",
+        "mode": "live" if source.startswith("akshare") else "cached" if has_full_cache else "seed",
         "source": source,
         "lastRefresh": now_text(),
         "message": f"已同步 A股股票名称目录，当前可搜索 {total_count or count} 只。" if (total_count or count) else "股票目录同步失败，继续使用已有缓存。",
@@ -7280,7 +7293,7 @@ def system_readiness_payload() -> dict[str, Any]:
             "message": data_status.get("message"),
         },
         "stockDirectory": {
-            "ok": directory_count >= MIN_A_STOCK_DIRECTORY_COUNT and directory_status.get("mode") == "live",
+            "ok": directory_count >= MIN_A_STOCK_DIRECTORY_COUNT and directory_status.get("mode") in {"live", "cached"},
             "mode": directory_status.get("mode"),
             "source": directory_status.get("source"),
             "count": directory_count,

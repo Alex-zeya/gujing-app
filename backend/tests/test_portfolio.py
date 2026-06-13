@@ -494,6 +494,35 @@ class PortfolioFlowTest(unittest.TestCase):
         q_matches = self.backend.stocks_search(q="未来")
         self.assertTrue(any(match["code"] == "123456" for match in q_matches))
 
+    def test_full_cached_stock_directory_counts_as_ready(self):
+        original_minimum = self.backend.MIN_A_STOCK_DIRECTORY_COUNT
+        original_fetch = self.backend.fetch_akshare_stock_directory
+
+        def fail_directory():
+            raise ConnectionError("offline")
+
+        try:
+            self.backend.MIN_A_STOCK_DIRECTORY_COUNT = 3
+            self.backend.upsert_stock_directory(
+                [
+                    {"code": "123451", "name": "缓存电气一", "industry": "电气设备"},
+                    {"code": "123452", "name": "缓存电气二", "industry": "电气设备"},
+                    {"code": "123453", "name": "缓存电气三", "industry": "电气设备"},
+                ],
+                "akshare:stock_info_a_code_name",
+            )
+            self.backend.fetch_akshare_stock_directory = fail_directory
+            status = self.backend.refresh_stock_directory(force=True)
+            readiness = self.backend.system_readiness_payload()
+        finally:
+            self.backend.MIN_A_STOCK_DIRECTORY_COUNT = original_minimum
+            self.backend.fetch_akshare_stock_directory = original_fetch
+
+        self.assertEqual(status["mode"], "cached")
+        self.assertGreaterEqual(status["count"], 3)
+        self.assertTrue(readiness["checks"]["stockDirectory"]["ok"])
+        self.assertEqual(readiness["checks"]["stockDirectory"]["mode"], "cached")
+
     def test_stock_search_is_fast_by_default_without_quote_refresh(self):
         self.backend.upsert_stock_directory(
             [{"code": "123457", "name": "快速电气", "industry": "电气设备"}],
