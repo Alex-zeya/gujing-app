@@ -3934,6 +3934,174 @@ def classify_news(title: str, content: str = "") -> tuple[str, str, str]:
     return "待观察", "neutral", "信息影响暂不明确，先作为观察变量记录。"
 
 
+def parse_news_datetime(value: str) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%Y/%m/%d %H:%M:%S", "%Y/%m/%d"):
+        with suppress(ValueError):
+            return datetime.strptime(raw[: len(fmt)], fmt)
+    return None
+
+
+def news_item_volatility_prediction(
+    title: str,
+    content: str,
+    tone: str,
+    published_at: str,
+) -> dict[str, Any]:
+    text = f"{title} {content}"
+    dated_at = parse_news_datetime(published_at)
+    age_days = None
+    if dated_at:
+        age_days = max(0, (datetime.now() - dated_at).days)
+
+    strength = 32
+    reasons = []
+    if tone == "up":
+        strength += 18
+        reasons.append("新闻语义偏利好，可能提高短期关注度。")
+    elif tone == "down":
+        strength += 22
+        reasons.append("新闻语义偏利空，可能压制短期风险偏好。")
+    else:
+        strength += 8
+        reasons.append("新闻方向不单边，但可能带来交易关注。")
+
+    if age_days is not None:
+        if age_days <= 1:
+            strength += 18
+            reasons.append("消息较新，对短期波动权重更高。")
+        elif age_days <= 3:
+            strength += 10
+            reasons.append("消息仍在短期消化窗口内。")
+        elif age_days <= 10:
+            strength += 4
+            reasons.append("消息已发布数日，影响需要看价格是否已经反映。")
+        else:
+            strength -= 10
+            reasons.append("消息时间较久，短线影响权重降低。")
+
+    event_words = {
+        "业绩": ["净利润", "营收", "一季报", "半年报", "年报", "同比", "预增", "预亏", "盈利"],
+        "资金": ["主力资金", "净流入", "净流出", "融资", "减持", "增持", "回购"],
+        "订单": ["中标", "签约", "订单", "合同", "项目"],
+        "监管": ["处罚", "问询", "调查", "诉讼", "违规"],
+        "政策": ["政策", "补贴", "关税", "出口", "监管"],
+    }
+    matched_events = [name for name, words in event_words.items() if any(word in text for word in words)]
+    if matched_events:
+        strength += min(18, 7 * len(matched_events))
+        reasons.append(f"涉及{matched_events[0]}类事件，可能影响资金定价。")
+
+    strength = clamp_score(strength)
+    if tone == "up" and strength >= 55:
+        direction = "偏上涨"
+        direction_code = "up"
+    elif tone == "down" and strength >= 55:
+        direction = "偏下跌"
+        direction_code = "down"
+    elif strength >= 55:
+        direction = "主要增加波动"
+        direction_code = "volatile"
+    else:
+        direction = "影响有限"
+        direction_code = "neutral"
+
+    if strength >= 78:
+        impact_level = "高"
+    elif strength >= 58:
+        impact_level = "中"
+    else:
+        impact_level = "低"
+
+    if age_days is None:
+        window = "需等待更多时间信息"
+    elif age_days <= 1:
+        window = "当天到3日内"
+    elif age_days <= 7:
+        window = "一周内"
+    else:
+        window = "更多用于背景观察"
+
+    return {
+        "direction": direction,
+        "directionCode": direction_code,
+        "impactLevel": impact_level,
+        "strength": strength,
+        "window": window,
+        "reason": " ".join(reasons[:2]),
+        "eventTags": matched_events[:3],
+    }
+
+
+def build_news_volatility_forecast(stock: dict[str, Any], items: list[dict[str, Any]], counts: dict[str, int]) -> dict[str, Any]:
+    if not items:
+        return {
+            "direction": "暂无明显消息",
+            "directionCode": "neutral",
+            "impactLevel": "低",
+            "probability": 0,
+            "window": "等待新闻样本",
+            "summary": "暂未读取到足够新闻，先以行情和K线为主。",
+            "watch": "继续等待公告、财报或行业消息更新。",
+            "drivers": [],
+        }
+
+    performance = stock.get("performance") or {}
+    day_move = float(performance.get("day") or 0)
+    week_move = float(performance.get("week") or 0)
+    item_predictions = [item.get("volatilityPrediction") or {} for item in items]
+    positive_strength = sum(float(item.get("strength") or 0) for item in item_predictions if item.get("directionCode") == "up")
+    negative_strength = sum(float(item.get("strength") or 0) for item in item_predictions if item.get("directionCode") == "down")
+    volatile_strength = sum(float(item.get("strength") or 0) for item in item_predictions if item.get("directionCode") == "volatile")
+    recency_bonus = max((float(item.get("strength") or 0) for item in item_predictions[:2]), default=0) * 0.18
+    momentum_bonus = min(10, abs(day_move) * 1.6 + abs(week_move) * 0.6)
+    probability = clamp_score(30 + recency_bonus + momentum_bonus + max(positive_strength, negative_strength, volatile_strength) / 5)
+
+    if positive_strength > negative_strength * 1.2 and positive_strength >= volatile_strength:
+        direction = "偏上涨"
+        direction_code = "up"
+        summary = "新闻面偏积极，若成交量同步放大，短期可能提高上涨关注度。"
+    elif negative_strength > positive_strength * 1.2 and negative_strength >= volatile_strength:
+        direction = "偏下跌"
+        direction_code = "down"
+        summary = "新闻面偏谨慎，若价格跌破近期支撑，短期回撤风险会放大。"
+    else:
+        direction = "主要增加波动"
+        direction_code = "volatile"
+        summary = "新闻方向不够单边，更可能先带来波动放大，而不是明确趋势。"
+
+    if probability >= 74:
+        impact_level = "高"
+    elif probability >= 55:
+        impact_level = "中"
+    else:
+        impact_level = "低"
+
+    strongest = max(item_predictions, key=lambda item: float(item.get("strength") or 0), default={})
+    drivers = []
+    if counts.get("positive"):
+        drivers.append(f"利好新闻 {counts['positive']} 条")
+    if counts.get("negative"):
+        drivers.append(f"利空新闻 {counts['negative']} 条")
+    if counts.get("watch"):
+        drivers.append(f"待观察消息 {counts['watch']} 条")
+    if strongest.get("eventTags"):
+        drivers.append(f"重点事件：{'、'.join(strongest['eventTags'])}")
+
+    return {
+        "direction": direction,
+        "directionCode": direction_code,
+        "impactLevel": impact_level,
+        "probability": probability,
+        "window": strongest.get("window") or "3日到一周内",
+        "summary": summary,
+        "watch": "重点看新闻发布后是否出现放量、突破或跌破关键位；没有量价确认时不要只凭消息行动。",
+        "drivers": drivers[:4],
+    }
+
+
 def fetch_stock_news_impact(code: str, limit: int = 5) -> dict[str, Any]:
     clean = clean_code(code)
     stock = get_stock_or_404(clean)
@@ -3954,6 +4122,7 @@ def fetch_stock_news_impact(code: str, limit: int = 5) -> dict[str, Any]:
                     "category": category,
                     "tone": tone,
                     "summary": summary,
+                    "volatilityPrediction": news_item_volatility_prediction(title, content, tone, str(value_from_row(row, ["发布时间"], ""))),
                     "publishedAt": str(value_from_row(row, ["发布时间"], "")),
                     "source": str(value_from_row(row, ["文章来源"], "")),
                     "url": str(value_from_row(row, ["新闻链接"], "")),
@@ -3980,6 +4149,7 @@ def fetch_stock_news_impact(code: str, limit: int = 5) -> dict[str, Any]:
         "stance": stance,
         "items": items,
         "counts": counts,
+        "forecast": build_news_volatility_forecast(stock, items, counts),
         "updated": now_text(),
         "errors": errors,
     }
@@ -3994,6 +4164,18 @@ def cached_stock_news_impact(code: str, limit: int = 5, max_age_minutes: int = N
         row = db.execute("SELECT payload, updated_at FROM news_cache WHERE code = ?", (clean,)).fetchone()
     if row and not timestamp_is_stale(row["updated_at"], max_age_minutes):
         payload = from_json(row["payload"])
+        if not payload.get("forecast"):
+            stock = get_stock_or_404(clean)
+            items = payload.get("items") or []
+            for item in items:
+                if not item.get("volatilityPrediction"):
+                    item["volatilityPrediction"] = news_item_volatility_prediction(
+                        str(item.get("title") or ""),
+                        "",
+                        str(item.get("tone") or "neutral"),
+                        str(item.get("publishedAt") or ""),
+                    )
+            payload["forecast"] = build_news_volatility_forecast(stock, items, payload.get("counts") or {})
         return {**payload, "cache": {"mode": "cached", "updatedAt": row["updated_at"]}}
     impact = fetch_stock_news_impact(clean, limit=limit)
     with connect() as db:
@@ -4592,6 +4774,14 @@ def build_alert_events() -> list[dict[str, Any]]:
 
 def news_volatility_signal(news_impact: dict[str, Any] | None) -> tuple[int, str, str]:
     impact = news_impact or {}
+    forecast = impact.get("forecast") or {}
+    if forecast:
+        score = min(24, int(float(forecast.get("probability") or 0) * 0.28))
+        return (
+            score,
+            str(forecast.get("direction") or "新闻波动"),
+            str(forecast.get("summary") or "新闻可能改变短期波动。"),
+        )
     counts = impact.get("counts") or {}
     items = impact.get("items") or []
     positive = int(counts.get("positive") or 0)

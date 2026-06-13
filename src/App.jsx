@@ -2624,6 +2624,7 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
   const fundamentalProfile = analysisScore.fundamentalProfile ?? researchFramework?.fundamentalProfile
   const compliance = analysisScore.compliance
   const newsImpact = stock.newsImpact
+  const newsForecast = newsImpact?.forecast
   const summaryPoints = [
     { label: '结论', value: decision.holdingAdvice },
     { label: '趋势', value: decision.hasHistory ? formatPercent(monthMove) : missingLabel('history'), tone: decision.hasHistory ? trendClass(monthMove) : 'is-pending' },
@@ -3060,11 +3061,39 @@ function StockDecisionPanel({ stock, addStockToPortfolio, addStockToWatchlist })
             <ChevronRight size={17} />
           </summary>
           <div className="news-impact-panel">
+            {newsForecast ? (
+              <div className={`news-forecast-card tone-${newsForecast.directionCode}`}>
+                <div className="news-forecast-head">
+                  <div>
+                    <span>未来波动判断</span>
+                    <strong>{newsForecast.direction}</strong>
+                  </div>
+                  <div className="news-forecast-meter">
+                    <span>{newsForecast.impactLevel}影响</span>
+                    <b>{newsForecast.probability}%</b>
+                  </div>
+                </div>
+                <p>{newsForecast.summary}</p>
+                <small>{newsForecast.window} · {newsForecast.watch}</small>
+                {newsForecast.drivers?.length ? (
+                  <div className="news-forecast-tags">
+                    {newsForecast.drivers.map((driver) => (
+                      <em key={driver}>{driver}</em>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {newsImpact.items.slice(0, 3).map((item) => (
               <article className={`news-impact-item tone-${item.tone}`} key={`${item.title}-${item.publishedAt}`}>
                 <b>{item.category}</b>
                 <p>{item.title}</p>
-                <small>{item.source} · {item.publishedAt}</small>
+                <small>
+                  {item.source} · {item.publishedAt}
+                  {item.volatilityPrediction
+                    ? ` · ${item.volatilityPrediction.direction} · ${item.volatilityPrediction.window}`
+                    : ''}
+                </small>
               </article>
             ))}
           </div>

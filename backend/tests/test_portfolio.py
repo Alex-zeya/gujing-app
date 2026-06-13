@@ -1274,6 +1274,38 @@ class PortfolioFlowTest(unittest.TestCase):
                 else:
                     self.backend.os.environ[key] = value
 
+    def test_news_volatility_forecast_uses_news_tone_and_event_type(self):
+        stock = self.backend.get_stock_or_404("000001")
+        recent_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        positive = self.backend.news_item_volatility_prediction(
+            "一季报净利润同比增长30%",
+            "公司营收改善，并出现订单增长。",
+            "up",
+            recent_time,
+        )
+        negative = self.backend.news_item_volatility_prediction(
+            "公司收到监管问询并涉及处罚",
+            "短期需要关注调查进展。",
+            "down",
+            recent_time,
+        )
+
+        self.assertEqual(positive["directionCode"], "up")
+        self.assertEqual(negative["directionCode"], "down")
+        self.assertIn("业绩", positive["eventTags"])
+        self.assertIn("监管", negative["eventTags"])
+
+        forecast = self.backend.build_news_volatility_forecast(
+            stock,
+            [{"volatilityPrediction": positive}],
+            {"positive": 1, "negative": 0, "watch": 0},
+        )
+
+        self.assertEqual(forecast["directionCode"], "up")
+        self.assertGreaterEqual(forecast["probability"], 50)
+        self.assertTrue(forecast["drivers"])
+
 
 if __name__ == "__main__":
     unittest.main()

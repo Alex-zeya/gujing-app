@@ -4606,11 +4606,86 @@
   background: var(--surface);
 }
 
-.news-impact-panel > div {
+.news-forecast-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  background: #f8fbff;
+}
+
+.news-forecast-head,
+.news-forecast-head > div,
+.news-forecast-meter {
   display: flex;
   justify-content: space-between;
   gap: 10px;
   align-items: center;
+}
+
+.news-forecast-head > div,
+.news-forecast-meter {
+  min-width: 0;
+}
+
+.news-forecast-head > div {
+  flex-wrap: wrap;
+}
+
+.news-forecast-card strong {
+  color: var(--primary);
+  font-size: 14px;
+}
+
+.news-forecast-card.tone-up strong {
+  color: var(--market-up);
+}
+
+.news-forecast-card.tone-down strong {
+  color: var(--market-down);
+}
+
+.news-forecast-card.tone-volatile strong {
+  color: var(--warning);
+}
+
+.news-forecast-meter b {
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.news-forecast-card p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 760;
+  line-height: 1.45;
+}
+
+.news-forecast-card small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.news-forecast-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.news-forecast-tags em {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: var(--surface);
+  color: var(--primary);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
 }
 
 .news-impact-panel span {
