@@ -1203,7 +1203,13 @@ function App() {
     async function loadKline() {
       if (activeTab !== 'kline' || !selectedCode) return
       try {
-        const data = await apiJson(`/api/stocks/${selectedCode}/kline`)
+        let data = await apiJson(`/api/stocks/${selectedCode}/kline`)
+        const hasEnoughKline = (data.candles?.length ?? 0) >= 20 || data.coverage?.history
+        if (!hasEnoughKline) {
+          data = await apiJson(`/api/stocks/${selectedCode}/kline?refresh=true`, {
+            timeoutMs: 22000,
+          })
+        }
         if (!isMounted) return
         setKlineCandles(data.candles)
         if (data.stock) {

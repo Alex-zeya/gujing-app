@@ -5168,6 +5168,128 @@ def refresh_akshare_history(code: str) -> dict[str, Any]:
     return stock
 
 
+def yahoo_symbol(code: str) -> str:
+    clean = clean_code(code)
+    return f"{clean}.SS" if clean.startswith(("5", "6", "9")) else f"{clean}.SZ"
+
+
+def refresh_yahoo_history(code: str) -> dict[str, Any]:
+    clean = clean_code(code)
+    stock = ensure_stock_record(clean)
+    response = requests.get(
+        f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol(clean)}",
+        params={"range": "6mo", "interval": "1d"},
+        headers={"User-Agent": "Mozilla/5.0"},
+        timeout=12,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    result = (payload.get("chart", {}).get("result") or [None])[0]
+    if not result:
+        raise RuntimeError("YAHOO_EMPTY_HISTORY")
+    timestamps = result.get("timestamp") or []
+    quote = ((result.get("indicators") or {}).get("quote") or [None])[0] or {}
+    opens = quote.get("open") or []
+    highs = quote.get("high") or []
+    lows = quote.get("low") or []
+    closes = quote.get("close") or []
+    volumes = quote.get("volume") or []
+
+    rows: list[dict[str, Any]] = []
+    for index, stamp in enumerate(timestamps):
+        close = number_or_none(closes[index] if index < len(closes) else None)
+        open_price = number_or_none(opens[index] if index < len(opens) else None)
+        high = number_or_none(highs[index] if index < len(highs) else None)
+        low = number_or_none(lows[index] if index < len(lows) else None)
+        if close is None or open_price is None or high is None or low is None:
+            continue
+        volume = number_or_none(volumes[index] if index < len(volumes) else None) or 0
+        previous_close = rows[-1]["close"] if rows else close
+        pct_chg = ((close - previous_close) / previous_close * 100) if previous_close else 0
+        rows.append(
+            {
+                "trade_date": datetime.fromtimestamp(int(stamp), timezone.utc).strftime("%Y%m%d"),
+                "open": float(open_price),
+                "close": float(close),
+                "high": float(high),
+                "low": float(low),
+                "volume": float(volume),
+                "amount": float(volume) * float(close),
+                "pct_chg": float(pct_chg),
+            }
+        )
+
+    if len(rows) < 20:
+        raise RuntimeError("YAHOO_INSUFFICIENT_HISTORY")
+
+    recent = rows[-80:]
+    closes_recent = [row["close"] for row in recent]
+    last_row = recent[-1]
+    ten = recent[-10:] if len(recent) >= 10 else recent
+    ten_closes = [row["close"] for row in ten]
+    spark_min = min(ten_closes)
+    spark_range = max(ten_closes) - spark_min or 1
+
+    stock = {**stock}
+    stock["price"] = price_to_text(last_row["close"])
+    stock["change"] = format_change(last_row["pct_chg"])
+    stock["performance"] = {
+        **stock.get("performance", {}),
+        "day": round(last_row["pct_chg"], 2),
+        "week": round((closes_recent[-1] - closes_recent[-5]) / closes_recent[-5] * 100, 2) if len(closes_recent) >= 5 else 0,
+        "month": round((closes_recent[-1] - closes_recent[-20]) / closes_recent[-20] * 100, 2) if len(closes_recent) >= 20 else 0,
+    }
+    stock["chart"] = [round(row["close"], 2) for row in ten]
+    stock["sparkline"] = [
+        round(40 + ((row["close"] - spark_min) / spark_range) * 22, 2)
+        for row in ten
+    ]
+    stock["updated"] = f"日K {last_row['trade_date']}"
+    stock["dataCoverage"] = {
+        **stock.get("dataCoverage", {}),
+        "quote": True,
+        "history": True,
+        "historySource": "yahoo",
+    }
+    stock["klineRows"] = [
+        {
+            "date": row["trade_date"],
+            "open": round(row["open"], 2),
+            "close": round(row["close"], 2),
+            "high": round(row["high"], 2),
+            "low": round(row["low"], 2),
+            "volume": row["volume"],
+            "amount": row["amount"],
+            "pctChg": round(row["pct_chg"], 2),
+        }
+        for row in recent
+    ]
+    previous_close = recent[-2]["close"] if len(recent) >= 2 else last_row["close"]
+    stock["quoteStats"] = {
+        **stock.get("quoteStats", {}),
+        "open": round(last_row["open"], 2),
+        "previousClose": round(previous_close, 2),
+        "dayHigh": round(last_row["high"], 2),
+        "dayLow": round(last_row["low"], 2),
+        "historyHigh": round(max(row["high"] for row in recent), 2),
+        "historyLow": round(min(row["low"] for row in recent), 2),
+        "volume": compact_volume(last_row["volume"]),
+        "amount": compact_yuan(last_row["amount"]),
+        "period": f"近{len(recent)}个交易日",
+        "source": "Yahoo Finance",
+    }
+    stock["historyProvider"] = "Yahoo Finance"
+    stock["klineSource"] = "Yahoo Finance chart"
+    stock["metrics"] = [
+        ["当前价", price_to_text(last_row["close"]), "日K"],
+        ["成交量", compact_volume(last_row["volume"]), "跟踪"],
+        ["数据源", "Yahoo Finance", "历史K"],
+    ]
+    stock["pulse"] = f"已补充 Yahoo 历史日K，近一月走势 {format_change(stock['performance']['month'])}。"
+    upsert_stock(stock)
+    return stock
+
+
 def refresh_eastmoney_history(code: str) -> dict[str, Any]:
     clean = clean_code(code)
     stock = ensure_stock_record(clean)
@@ -5270,7 +5392,7 @@ def refresh_eastmoney_history(code: str) -> dict[str, Any]:
             "amount": row["amount"],
             "pctChg": round(row["pct_chg"], 2),
         }
-        for row in ten
+        for row in recent
     ]
     previous_close = round(last_row["close"] - last_row["change"], 2)
     quote_stats: dict[str, Any] = {
@@ -5519,7 +5641,11 @@ def ensure_stock_history(code: str, max_age_minutes: int = HISTORY_CACHE_MINUTES
     has_history = len(stock.get("klineRows") or []) >= 40
     if has_history and not stock_cache_is_stale(stock, "historyRefreshedAt", max_age_minutes):
         return apply_analysis_score(stock)
-    if stock.get("historyProviderErrors") and not stock_cache_is_stale(stock, "historyFailedAt", HISTORY_FAILURE_RETRY_MINUTES):
+    if (
+        max_age_minutes > 0
+        and stock.get("historyProviderErrors")
+        and not stock_cache_is_stale(stock, "historyFailedAt", HISTORY_FAILURE_RETRY_MINUTES)
+    ):
         return apply_analysis_score(stock)
     try:
         stock = refresh_eastmoney_history(code)
@@ -5538,11 +5664,24 @@ def ensure_stock_history(code: str, max_age_minutes: int = HISTORY_CACHE_MINUTES
             upsert_stock(stock)
             return stock
         except Exception as akshare_error:
-            stock["historyProviderErrors"] = [
-                f"eastmoney:{type(eastmoney_error).__name__}",
-                f"akshare:{type(akshare_error).__name__}",
-            ]
-            stock = mark_stock_cache(stock, "historyFailedAt")
+            try:
+                stock = refresh_yahoo_history(code)
+                stock = mark_stock_cache(stock, "historyRefreshedAt")
+                stock.get("cache", {}).pop("historyFailedAt", None)
+                stock["historyProviderErrors"] = [
+                    f"eastmoney:{type(eastmoney_error).__name__}",
+                    f"akshare:{type(akshare_error).__name__}",
+                ]
+                stock = apply_analysis_score(stock)
+                upsert_stock(stock)
+                return stock
+            except Exception as yahoo_error:
+                stock["historyProviderErrors"] = [
+                    f"eastmoney:{type(eastmoney_error).__name__}",
+                    f"akshare:{type(akshare_error).__name__}",
+                    f"yahoo:{type(yahoo_error).__name__}",
+                ]
+                stock = mark_stock_cache(stock, "historyFailedAt")
         stock = apply_analysis_score(stock)
         upsert_stock(stock)
         return stock
@@ -6630,6 +6769,17 @@ def stocks_history_refresh(code: str) -> dict[str, Any]:
         return sanitize_display_text(stock)
     except Exception as error:
         errors.append(f"akshare:{error}")
+
+    try:
+        stock = apply_analysis_score(refresh_yahoo_history(code))
+        with suppress(Exception):
+            refresh_cached_quotes([code])
+            stock = apply_analysis_score(get_stock_or_404(code))
+        stock["historyProviderErrors"] = errors
+        upsert_stock(stock)
+        return sanitize_display_text(stock)
+    except Exception as error:
+        errors.append(f"yahoo:{error}")
         stock = ensure_stock_record(code)
         stock["dataCoverage"] = {**stock.get("dataCoverage", {}), "history": False}
         stock["historyProviderErrors"] = errors
@@ -6648,7 +6798,7 @@ def stocks_fundamentals_refresh(code: str) -> dict[str, Any]:
 
 @app.get("/api/stocks/{code}/kline")
 def stocks_kline(code: str, refresh: bool = False) -> dict[str, Any]:
-    stock = hydrate_stock_market_data(code, allow_network=refresh)
+    stock = hydrate_stock_market_data(code, force_history=refresh, allow_network=refresh)
     return sanitize_display_text({
         "code": stock["code"],
         "name": stock["name"],

@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
@@ -577,6 +578,125 @@ class PortfolioFlowTest(unittest.TestCase):
         self.assertEqual(detail["code"], "000001")
         self.assertEqual(kline["code"], "000001")
         self.assertTrue(kline["candles"])
+
+    def test_eastmoney_history_preserves_full_recent_kline_window(self):
+        original_get = self.backend.requests.get
+
+        class FakeResponse:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                klines = []
+                for index in range(80):
+                    day = datetime(2026, 3, 1) + timedelta(days=index)
+                    close = 10 + index * 0.02
+                    open_price = close - 0.01
+                    high = close + 0.05
+                    low = close - 0.06
+                    klines.append(
+                        f"{day:%Y-%m-%d},{open_price:.2f},{close:.2f},{high:.2f},{low:.2f},"
+                        f"{100000 + index},{1000000 + index * 1000},1.2,0.3,0.03,0.8"
+                    )
+                return {"data": {"klines": klines}}
+
+        self.backend.requests.get = lambda *args, **kwargs: FakeResponse()
+        try:
+            stock = self.backend.refresh_eastmoney_history("000001")
+        finally:
+            self.backend.requests.get = original_get
+
+        self.assertEqual(len(stock["klineRows"]), 80)
+        self.assertTrue(stock["dataCoverage"]["history"])
+
+    def test_yahoo_history_populates_a_share_kline_fallback(self):
+        original_get = self.backend.requests.get
+
+        class FakeResponse:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                start = datetime(2026, 2, 1, tzinfo=self_backend.timezone.utc)
+                timestamps = [int((start + timedelta(days=index)).timestamp()) for index in range(45)]
+                closes = [10 + index * 0.03 for index in range(45)]
+                return {
+                    "chart": {
+                        "result": [
+                            {
+                                "timestamp": timestamps,
+                                "indicators": {
+                                    "quote": [
+                                        {
+                                            "open": [value - 0.02 for value in closes],
+                                            "high": [value + 0.05 for value in closes],
+                                            "low": [value - 0.06 for value in closes],
+                                            "close": closes,
+                                            "volume": [100000 + index for index in range(45)],
+                                        }
+                                    ]
+                                },
+                            }
+                        ]
+                    }
+                }
+
+        self_backend = self.backend
+        self.backend.requests.get = lambda *args, **kwargs: FakeResponse()
+        try:
+            stock = self.backend.refresh_yahoo_history("601727")
+        finally:
+            self.backend.requests.get = original_get
+
+        self.assertEqual(len(stock["klineRows"]), 45)
+        self.assertEqual(stock["klineSource"], "Yahoo Finance chart")
+        self.assertTrue(stock["dataCoverage"]["history"])
+
+    def test_forced_kline_refresh_ignores_recent_history_failure_cache(self):
+        original_refresh = self.backend.refresh_eastmoney_history
+        original_apply_snapshot = self.backend.apply_snapshot_history
+        original_quote_refresh = self.backend.refresh_cached_quotes
+        calls = []
+
+        stock = self.backend.ensure_stock_record("000001")
+        stock["klineRows"] = []
+        stock["dataCoverage"] = {**stock.get("dataCoverage", {}), "history": False}
+        stock["historyProviderErrors"] = ["eastmoney:Timeout"]
+        stock["cache"] = {**stock.get("cache", {}), "historyFailedAt": self.backend.now_text()}
+        self.backend.upsert_stock(stock)
+
+        def fake_refresh(code):
+            calls.append(code)
+            refreshed = self.backend.get_stock_or_404(code)
+            refreshed["klineRows"] = [
+                {
+                    "date": f"202604{index + 1:02d}",
+                    "open": 10,
+                    "close": 10 + index * 0.1,
+                    "high": 10.5 + index * 0.1,
+                    "low": 9.8 + index * 0.1,
+                    "volume": 1000,
+                    "amount": 10000,
+                    "pctChg": 0.1,
+                }
+                for index in range(40)
+            ]
+            refreshed["dataCoverage"] = {**refreshed.get("dataCoverage", {}), "history": True}
+            self.backend.upsert_stock(refreshed)
+            return refreshed
+
+        self.backend.refresh_eastmoney_history = fake_refresh
+        self.backend.apply_snapshot_history = lambda stock: stock
+        self.backend.refresh_cached_quotes = lambda *args, **kwargs: {"mode": "test"}
+        try:
+            kline = self.backend.stocks_kline("000001", refresh=True)
+        finally:
+            self.backend.refresh_eastmoney_history = original_refresh
+            self.backend.apply_snapshot_history = original_apply_snapshot
+            self.backend.refresh_cached_quotes = original_quote_refresh
+
+        self.assertEqual(calls, ["000001"])
+        self.assertEqual(len(kline["candles"]), 40)
 
     def test_mock_sms_returns_dev_code_in_production_mode(self):
         original_env = self.backend.os.environ.get("APP_ENV")
