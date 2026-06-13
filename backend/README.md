@@ -84,9 +84,16 @@ npm run backend
 - `GET /api/user/summary`
 - `GET /api/user/export`
 
-## 登录和短信验证码
+## 登录方式
 
-首版 App 登录入口为 Apple 登录和微信登录：
+当前首版 App 以手机号验证码作为可用登录入口，用于保存用户持仓、观察池、提醒规则和风险偏好：
+
+```http
+POST /api/auth/sms/send
+POST /api/auth/sms/login
+```
+
+微信登录和 Apple 登录作为后续正式能力保留后端接口：
 
 ```http
 POST /api/auth/apple/login
@@ -95,7 +102,7 @@ POST /api/auth/wechat/login
 
 Apple 登录需要 iOS 原生层拿到 `identityToken` 后传给后端，后端会用 Apple 公钥验签，并校验 `APPLE_SIGN_IN_CLIENT_ID` / `APPLE_BUNDLE_ID`。微信登录需要 iOS 原生层拿到授权 `code` 后传给后端，后端会用 `WECHAT_APP_ID` / `WECHAT_APP_SECRET` 换取 `openid`。
 
-手机号验证码接口仍保留为备用能力，但前端首版不再展示手机号登录。
+微信登录还需要 iOS 原生层接入微信 OpenSDK；Apple 登录需要正式 Apple Developer Program 和 Sign in with Apple 能力。
 
 本地开发默认使用模拟短信：
 

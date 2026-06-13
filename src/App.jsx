@@ -2288,8 +2288,8 @@ function LoginScreen({
         </div>
 
         <div className="login-copy">
-          <h2>登录后查看你的持仓和观察池</h2>
-          <p>每个账户独立保存股票、提醒和风险偏好。</p>
+          <h2>登录后同步你的持仓和观察池</h2>
+          <p>先用验证码进入，后续会继续接入微信和 Apple 登录。</p>
         </div>
 
         <AuthPanel
@@ -4687,7 +4687,7 @@ function ProfileView({
             支持中心
           </a>
           <button type="button" onClick={() => openLegalPanel('version')}>
-            版本进度
+            Alex-w有话说
           </button>
         </div>
       </section>
@@ -5087,21 +5087,21 @@ const legalContent = {
     ],
   },
   version: {
-    kicker: 'Beta 进度',
-    title: '当前版本状态',
-    summary: '股镜还在测试阶段，适合内部试用和功能验证。',
+    kicker: '产品说明',
+    title: 'Alex-w有话说',
+    summary: '股镜现在先把 A 股搜索、行情整理、持仓记录和观察池提醒做好，让刚接触股票的人也能快速看懂重点。',
     items: [
       {
-        title: '已经完成',
-        text: '股票搜索、观察池、持仓、风险引擎、推荐反馈、通知规则和 iOS 模拟器运行已经打通。',
+        title: '现在能做什么',
+        text: '可以查股票、看 K 线、记录持仓、加入观察池，并根据行情、趋势和组合结构给出风险提示。',
       },
       {
-        title: '正在完善',
-        text: '真实行情稳定性、历史 K 线、个性化建议记录、Apple 登录和微信登录还需要继续接入服务商。',
+        title: '还在继续打磨',
+        text: '接下来会继续加强行情稳定性、历史数据补全、新闻波动提醒和登录体验，让日常使用更顺。',
       },
       {
-        title: '上线前检查',
-        text: '还需要真机签名、App 图标最终稿、公开域名、免责声明确认和 App Store 截图。',
+        title: '特别感谢',
+        text: '谢谢 Wendy 同学一路试用和提建议，很多界面里不清楚、太复杂的地方，都是在反馈里一步步改出来的。',
       },
     ],
   },
@@ -5273,16 +5273,16 @@ function AuthPanel({
           onClick={() => handleProviderLogin('wechat')}
         >
           <MessageCircle size={19} />
-          <span>{activeProvider === 'wechat' ? '正在唤起微信登录' : '使用微信登录'}</span>
+          <span>{activeProvider === 'wechat' ? '正在检查微信登录' : '微信登录（配置中）'}</span>
         </button>
       </div>
       <p className="auth-helper">
-        登录后会同步你的持仓、观察池、提醒规则和风险偏好。Apple 登录先保留技术能力，等上架和开发者账号配置完成后再开启。
+        当前优先使用手机号验证码登录。微信登录已经完成开放平台资料准备，等 iOS 原生 SDK 和开发者账号能力就绪后开放；Apple 登录后置。
       </p>
       <div className="auth-status-strip" aria-label="登录配置状态">
-        <span>验证码登录</span>
-        <span>微信审核中</span>
-        <span>Apple 暂不显示</span>
+        <span>验证码可用</span>
+        <span>微信待接入</span>
+        <span>Apple 后置</span>
       </div>
       {(authNotice || localNotice) && <p className="auth-notice">{localNotice || authNotice}</p>}
     </section>
