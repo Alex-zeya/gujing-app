@@ -17,9 +17,9 @@
 | K 线和基础字段 | 已接入兜底 | Tushare 优先，公开数据源兜底，缺字段时保留缓存。 |
 | 持仓与交易流水 | 已支持 | 支持加入持仓、买入、卖出、调整、收益和本金计算。 |
 | 组合风险 | 已支持 | 根据行业集中度、单股集中度、收益分布和波动状态给出风险提示。 |
-| 登录系统 | 接入中 | 首版恢复手机号验证码登录；微信登录已具备后端换码和 App 状态检测，审核通过后启用；Apple 登录能力保留但默认不展示。 |
+| 登录系统 | 接入中 | 首版保留手机号验证码登录；微信开放平台审核已通过，等待 iOS OpenSDK 真机授权链路；Apple 登录能力保留但后置。 |
 | iOS 工程 | 已接入 | Capacitor iOS 项目已生成，可用 Xcode 真机运行。 |
-| App Store 上架 | 未完成 | 还需要在 Xcode/Apple Developer 开启 Apple 登录能力、公开隐私政策 URL、审核素材和真机回归。 |
+| App Store 上架 | 未完成 | 还需要 Apple Developer 账号能力、公开隐私政策 URL、审核素材和真机回归；微信登录可先作为国内登录方向继续打磨。 |
 
 ## 核心功能
 
@@ -99,6 +99,21 @@ Capacitor iOS 工程
 - 自建日快照：每天积累 open/high/low/close/成交量/成交额
 
 免费数据源适合早期验证产品体验，但不保证长期稳定、完整或实时。正式上线前需要进一步评估数据授权、稳定性和合规风险。
+
+## 品牌和 Logo
+
+当前 Logo、启动图和开放平台素材已经集中管理，后续仍然可以继续替换。正式上架前替换成本最低；如果微信开放平台或 App Store 已经审核通过，改图标后通常需要同步更新对应平台素材。
+
+主要位置：
+
+- 源文件：`assets/brand/gujing-app-icon.svg`
+- 启动页源文件：`assets/brand/gujing-splash.svg`
+- Web 图标：`public/favicon.svg`、`public/apple-touch-icon.svg`
+- iOS App 图标：`ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png`
+- iOS 启动图：`ios/App/App/Assets.xcassets/Splash.imageset/`
+- 微信审核素材：`assets/brand/wechat/`、`assets/wechat-review-flow/`
+
+更详细的替换流程见 [docs/APP_ASSETS_AND_LOGO.md](./docs/APP_ASSETS_AND_LOGO.md)。
 
 ## 本地运行
 
@@ -250,6 +265,7 @@ npm run deploy:check -- https://你的后端域名
 
 - [docs/LAUNCH_READINESS.md](./docs/LAUNCH_READINESS.md)
 - [docs/APP_STORE_REVIEW_CHECKLIST.md](./docs/APP_STORE_REVIEW_CHECKLIST.md)
+- [docs/APP_ASSETS_AND_LOGO.md](./docs/APP_ASSETS_AND_LOGO.md)
 - [docs/QA_TEST_REPORT.md](./docs/QA_TEST_REPORT.md)
 
 ## 项目定位
