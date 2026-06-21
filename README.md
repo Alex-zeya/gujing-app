@@ -115,6 +115,12 @@ Capacitor iOS 工程
 
 更详细的替换流程见 [docs/APP_ASSETS_AND_LOGO.md](./docs/APP_ASSETS_AND_LOGO.md)。
 
+## Codex Skills
+
+项目开发过程中可以使用 Codex skills 做 UI 打磨、后端排查、上线检查和测试验证。刚安装的 Superpowers 插件也已经整理进文档，后续可以按任务直接调用。
+
+- [docs/SKILLS_AND_SUPERPOWERS.md](./docs/SKILLS_AND_SUPERPOWERS.md)
+
 ## 本地运行
 
 ### 1. 安装依赖
