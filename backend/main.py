@@ -43,6 +43,8 @@ RESEARCH_FRAMEWORK_VERSION = "research-v1-a-share-adapted"
 COMPETITIVE_INTEL_VERSION = "competitive-intel-v1-a-share"
 FUNDAMENTAL_PROFILE_VERSION = "fundamental-v1-data-guard"
 RECOMMENDATION_MODEL_VERSION = "recommend-v2-feedback"
+ANALYSIS_CONTEXT_PACK_VERSION = "analysis-context-pack-v1"
+DECISION_SIGNAL_MODEL_VERSION = "decision-signal-v1"
 RISK_PROFILE_RULES = {
     "稳健": {
         "label": "稳健",
@@ -3919,6 +3921,338 @@ def apply_analysis_score(stock: dict[str, Any]) -> dict[str, Any]:
     return stock
 
 
+def data_status_from_quality(score: float, has_data: bool, fallback: bool = False) -> str:
+    if not has_data:
+        return "missing"
+    if fallback:
+        return "fallback"
+    if score >= 70:
+        return "available"
+    if score >= 45:
+        return "partial"
+    return "stale"
+
+
+def build_analysis_context_pack(
+    stock: dict[str, Any],
+    holding: dict[str, Any] | None = None,
+    source_type: str = "analysis",
+) -> dict[str, Any]:
+    stock = {**stock}
+    analysis = stock.get("analysisScore") or score_stock_analysis(stock)
+    forecast = analysis.get("forecast") or build_stock_forecast(stock)
+    advice = analysis.get("advice") or build_stock_advice_engine(stock, holding=holding)
+    data_quality = analysis.get("dataQuality") or stock_data_quality(stock)
+    data_coverage = stock.get("dataCoverage", {})
+    quote_stats = stock.get("quoteStats", {})
+    news_impact = stock.get("newsImpact") or {}
+    news_forecast = news_impact.get("volatilityForecast") or {}
+    current_price = stock_price_number(stock)
+    closes = history_closes(stock)
+    latest_close = closes[-1] if closes else current_price
+    first_close = closes[0] if closes else None
+    history_change = ((latest_close - first_close) / first_close * 100) if first_close else None
+    quality_score = float(data_quality.get("score") or 0)
+
+    blocks = [
+        {
+            "key": "quote",
+            "label": "实时/延迟行情",
+            "status": data_status_from_quality(
+                quality_score,
+                bool(data_coverage.get("quote") or current_price),
+                bool(stock.get("fallbackApplied")),
+            ),
+            "summary": f"当前价 {current_price:.2f}，今日 {format_change(float((stock.get('performance') or {}).get('day', 0) or 0))}。"
+            if current_price
+            else "当前行情仍在同步，暂按保守方式观察。",
+            "fields": {
+                "price": current_price,
+                "dayChange": float((stock.get("performance") or {}).get("day", 0) or 0),
+                "source": stock.get("quoteSource") or stock.get("source") or "gujing-cache",
+            },
+        },
+        {
+            "key": "dailyBars",
+            "label": "历史K线",
+            "status": data_status_from_quality(quality_score, bool(closes)),
+            "summary": f"已读取 {len(closes)} 个收盘样本，阶段变化 {format_change(history_change or 0)}。"
+            if closes
+            else "历史K线仍在同步，趋势判断会降低权重。",
+            "fields": {
+                "sampleCount": len(closes),
+                "latestClose": round(latest_close, 2) if latest_close else None,
+                "periodChange": round(history_change, 2) if history_change is not None else None,
+            },
+        },
+        {
+            "key": "technical",
+            "label": "趋势与波动",
+            "status": data_status_from_quality(
+                float((forecast.get("confidence") or {}).get("score") or quality_score),
+                bool(closes),
+            ),
+            "summary": forecast.get("summary") or advice.get("trendView") or "趋势信号仍需继续观察。",
+            "fields": {
+                "probability20d": forecast.get("probability20d"),
+                "riskScore": forecast.get("riskScore"),
+                "confidence": forecast.get("confidence"),
+                "keyLevels": forecast.get("keyLevels"),
+            },
+        },
+        {
+            "key": "fundamentals",
+            "label": "基础面字段",
+            "status": data_status_from_quality(quality_score, bool(quote_stats.get("marketCap"))),
+            "summary": (
+                f"企业市值 {quote_stats.get('marketCapText') or quote_stats.get('marketCap')}，基础字段可用于辅助判断。"
+                if quote_stats.get("marketCap")
+                else "基础面字段仍在完善，建议不要只凭短线涨跌判断。"
+            ),
+            "fields": {
+                "marketCap": quote_stats.get("marketCap"),
+                "marketCapText": quote_stats.get("marketCapText"),
+                "turnover": quote_stats.get("turnover"),
+                "amount": quote_stats.get("amount"),
+            },
+        },
+        {
+            "key": "news",
+            "label": "新闻与事件",
+            "status": "available" if news_impact.get("items") else "missing",
+            "summary": news_forecast.get("summary") or "暂未形成明显新闻驱动，先以价格和公告跟踪为主。",
+            "fields": {
+                "counts": news_impact.get("counts") or {},
+                "directionCode": news_forecast.get("directionCode"),
+                "probability": news_forecast.get("probability"),
+                "drivers": (news_forecast.get("drivers") or [])[:3],
+            },
+        },
+        {
+            "key": "portfolio",
+            "label": "持仓上下文",
+            "status": "available" if holding else "not_applicable",
+            "summary": (
+                f"组合占比 {float(holding.get('positionRatio', 0) or 0):.1f}%，累计收益 {format_change(float(holding.get('totalGainRate', 0) or 0))}。"
+                if holding
+                else "当前未传入持仓，信号按观察/建仓前研究场景生成。"
+            ),
+            "fields": {
+                "positionRatio": round(float((holding or {}).get("positionRatio", 0) or 0), 2),
+                "totalGainRate": round(float((holding or {}).get("totalGainRate", 0) or 0), 2),
+            },
+        },
+    ]
+    missing_blocks = [block["label"] for block in blocks if block["status"] in {"missing", "stale"}]
+    return sanitize_display_text(
+        {
+            "version": ANALYSIS_CONTEXT_PACK_VERSION,
+            "sourceType": source_type,
+            "subject": {
+                "code": stock.get("code"),
+                "name": stock.get("name"),
+                "market": "A股",
+                "industry": stock.get("industry") or "未分类",
+            },
+            "blocks": blocks,
+            "dataQuality": {
+                "score": data_quality.get("score"),
+                "label": data_quality.get("label"),
+                "warnings": data_quality.get("warnings") or [],
+                "limitations": missing_blocks[:4],
+            },
+            "generatedAt": now_text(),
+        }
+    )
+
+
+def decision_signal_id(user_id: str, code: str, source_type: str, action_code: str, horizon: str) -> str:
+    day_key = datetime.now().strftime("%Y%m%d")
+    seed = f"{user_id}:{clean_code(code)}:{source_type}:{action_code}:{horizon}:{day_key}"
+    return hashlib.sha1(seed.encode("utf-8")).hexdigest()[:18]
+
+
+def build_decision_signal(
+    stock: dict[str, Any],
+    holding: dict[str, Any] | None = None,
+    source_type: str = "analysis",
+    user_id: str | None = None,
+) -> dict[str, Any]:
+    stock = {**stock}
+    analysis = stock.get("analysisScore") or score_stock_analysis(stock)
+    advice = analysis.get("advice") or build_stock_advice_engine(stock, holding=holding)
+    forecast = analysis.get("forecast") or build_stock_forecast(stock)
+    news_impact = stock.get("newsImpact") or {}
+    news_forecast = news_impact.get("volatilityForecast") or {}
+    context_pack = build_analysis_context_pack(stock, holding=holding, source_type=source_type)
+    action = advice.get("action") or {}
+    action_code = str(action.get("code") or "watch")
+    horizon = str(forecast.get("horizon") or "20d")
+    confidence_score = float((forecast.get("confidence") or {}).get("score") or 50)
+    quality_score = float((analysis.get("dataQuality") or {}).get("score") or 50)
+    confidence = clamp_score(confidence_score * 0.62 + quality_score * 0.38)
+    watch_conditions = []
+    for trigger in advice.get("triggers") or []:
+        text = trigger.get("text") if isinstance(trigger, dict) else str(trigger)
+        if text:
+            watch_conditions.append(text)
+    watch_conditions.extend(str(item) for item in (advice.get("nextActions") or []) if item)
+    evidence = [
+        {
+            "label": "综合建议",
+            "text": advice.get("systemAnalysis") or advice.get("summary") or "",
+        },
+        {
+            "label": "模型预测",
+            "text": forecast.get("summary") or "",
+            "score": forecast.get("probability20d"),
+        },
+        {
+            "label": "新闻事件",
+            "text": news_forecast.get("summary") or "暂无明显新闻驱动。",
+            "score": news_forecast.get("probability"),
+        },
+    ]
+    signal = {
+        "id": decision_signal_id(user_id or current_user_id(), stock["code"], source_type, action_code, horizon),
+        "modelVersion": DECISION_SIGNAL_MODEL_VERSION,
+        "code": stock["code"],
+        "name": stock["name"],
+        "market": "A股",
+        "sourceType": source_type,
+        "status": "active",
+        "action": {
+            "code": action_code,
+            "label": action.get("label") or "持续观察",
+            "reason": action.get("reason") or advice.get("stance") or "当前信号仍需继续确认。",
+            "targetPosition": action.get("targetPosition"),
+        },
+        "score": advice.get("total") or analysis.get("total"),
+        "confidence": confidence,
+        "horizon": horizon,
+        "reason": advice.get("systemAnalysis") or advice.get("summary") or "",
+        "riskSummary": advice.get("risk") or "请结合仓位、波动和新闻事件继续观察。",
+        "catalystSummary": news_forecast.get("summary") or "暂未发现强新闻催化，优先跟踪价格、公告和成交变化。",
+        "watchConditions": watch_conditions[:5],
+        "evidence": evidence,
+        "dataQualitySummary": context_pack["dataQuality"],
+        "contextPack": context_pack,
+        "disclaimer": "仅用于信息整理、风险观察和投研辅助，不构成证券投资建议。",
+        "createdAt": now_text(),
+        "updatedAt": now_text(),
+    }
+    return sanitize_display_text(signal)
+
+
+def persist_decision_signal(signal: dict[str, Any], user_id: str | None = None) -> dict[str, Any]:
+    resolved_user_id = user_id or current_user_id()
+    with connect() as db:
+        db.execute(
+            """
+            INSERT INTO decision_signals (
+              id, user_id, code, name, source_type, action_code, action_label,
+              score, confidence, horizon, status, reason, risk_summary,
+              catalyst_summary, watch_conditions, evidence, context_pack,
+              created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              name = excluded.name,
+              action_code = excluded.action_code,
+              action_label = excluded.action_label,
+              score = excluded.score,
+              confidence = excluded.confidence,
+              status = excluded.status,
+              reason = excluded.reason,
+              risk_summary = excluded.risk_summary,
+              catalyst_summary = excluded.catalyst_summary,
+              watch_conditions = excluded.watch_conditions,
+              evidence = excluded.evidence,
+              context_pack = excluded.context_pack,
+              updated_at = excluded.updated_at
+            """,
+            (
+                signal["id"],
+                resolved_user_id,
+                signal["code"],
+                signal["name"],
+                signal["sourceType"],
+                signal["action"]["code"],
+                signal["action"]["label"],
+                float(signal.get("score") or 0),
+                float(signal.get("confidence") or 0),
+                signal["horizon"],
+                signal["status"],
+                signal.get("reason") or "",
+                signal.get("riskSummary") or "",
+                signal.get("catalystSummary") or "",
+                to_json(signal.get("watchConditions") or []),
+                to_json(signal.get("evidence") or []),
+                to_json(signal.get("contextPack") or {}),
+                signal.get("createdAt") or now_text(),
+                now_text(),
+            ),
+        )
+    return signal
+
+
+def row_to_decision_signal(row: Any) -> dict[str, Any]:
+    action = {
+        "code": row["action_code"],
+        "label": row["action_label"],
+        "reason": row["reason"],
+    }
+    return sanitize_display_text(
+        {
+            "id": row["id"],
+            "modelVersion": DECISION_SIGNAL_MODEL_VERSION,
+            "code": row["code"],
+            "name": row["name"],
+            "market": "A股",
+            "sourceType": row["source_type"],
+            "status": row["status"],
+            "action": action,
+            "score": row["score"],
+            "confidence": row["confidence"],
+            "horizon": row["horizon"],
+            "reason": row["reason"],
+            "riskSummary": row["risk_summary"],
+            "catalystSummary": row["catalyst_summary"],
+            "watchConditions": from_json(row["watch_conditions"]),
+            "evidence": from_json(row["evidence"]),
+            "contextPack": from_json(row["context_pack"]),
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
+            "disclaimer": "仅用于信息整理、风险观察和投研辅助，不构成证券投资建议。",
+        }
+    )
+
+
+def decision_signals_snapshot(
+    user_id: str | None = None,
+    code: str | None = None,
+    status: str = "active",
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    params: list[Any] = [user_id or current_user_id(), status]
+    where = "user_id = ? AND status = ?"
+    if code:
+        where += " AND code = ?"
+        params.append(clean_code(code))
+    params.append(max(1, min(limit, 100)))
+    with connect() as db:
+        rows = db.execute(
+            f"""
+            SELECT * FROM decision_signals
+            WHERE {where}
+            ORDER BY updated_at DESC
+            LIMIT ?
+            """,
+            tuple(params),
+        ).fetchall()
+    return [row_to_decision_signal(row) for row in rows]
+
+
 def classify_news(title: str, content: str = "") -> tuple[str, str, str]:
     text = f"{title} {content}"
     positive_words = ["增长", "上涨", "盈利", "中标", "签约", "回购", "增持", "分红", "获批", "投产", "突破", "创新高"]
@@ -6252,6 +6586,31 @@ def init_db() -> None:
         )
         db.execute(
             """
+            CREATE TABLE IF NOT EXISTS decision_signals (
+              id TEXT PRIMARY KEY,
+              user_id TEXT DEFAULT 'default_user',
+              code TEXT NOT NULL,
+              name TEXT NOT NULL,
+              source_type TEXT NOT NULL,
+              action_code TEXT NOT NULL,
+              action_label TEXT NOT NULL,
+              score REAL NOT NULL,
+              confidence REAL NOT NULL,
+              horizon TEXT NOT NULL,
+              status TEXT NOT NULL,
+              reason TEXT NOT NULL,
+              risk_summary TEXT NOT NULL,
+              catalyst_summary TEXT NOT NULL,
+              watch_conditions TEXT NOT NULL,
+              evidence TEXT NOT NULL,
+              context_pack TEXT NOT NULL,
+              created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+              updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        db.execute(
+            """
             CREATE TABLE IF NOT EXISTS recommendation_feedback (
               id TEXT PRIMARY KEY,
               user_id TEXT DEFAULT 'default_user',
@@ -6436,6 +6795,12 @@ def init_db() -> None:
             db.execute("ALTER TABLE alert_events ADD COLUMN user_id TEXT DEFAULT 'default_user'")
         db.execute(
             "CREATE INDEX IF NOT EXISTS idx_alert_events_created ON alert_events (created_at DESC)"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_decision_signals_user_status ON decision_signals (user_id, status, updated_at DESC)"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_decision_signals_code ON decision_signals (code, updated_at DESC)"
         )
         db.execute(
             "CREATE INDEX IF NOT EXISTS idx_stock_directory_name ON stock_directory (name)"
@@ -7004,12 +7369,45 @@ def stocks_kline(code: str, refresh: bool = False) -> dict[str, Any]:
 @app.get("/api/stocks/{code}/analysis")
 def stocks_analysis(code: str) -> dict[str, Any]:
     stock = apply_analysis_score(apply_snapshot_history(get_stock_or_404(code)))
+    context_pack = build_analysis_context_pack(stock, source_type="stock-analysis")
+    decision_signal = persist_decision_signal(
+        build_decision_signal(stock, source_type="stock-analysis")
+    )
     upsert_stock(stock)
     return sanitize_display_text({
         "code": stock["code"],
         "name": stock["name"],
         "analysisScore": stock["analysisScore"],
+        "analysisContextPack": context_pack,
+        "decisionSignal": decision_signal,
         "newsImpact": stock.get("newsImpact"),
+    })
+
+
+@app.get("/api/stocks/{code}/analysis-context")
+def stocks_analysis_context(code: str) -> dict[str, Any]:
+    stock = apply_analysis_score(apply_snapshot_history(get_stock_or_404(code)))
+    context_pack = build_analysis_context_pack(stock, source_type="stock-analysis")
+    return sanitize_display_text({
+        "code": stock["code"],
+        "name": stock["name"],
+        "analysisContextPack": context_pack,
+    })
+
+
+@app.get("/api/stocks/{code}/decision-signal")
+def stocks_decision_signal(code: str) -> dict[str, Any]:
+    stock = apply_analysis_score(apply_snapshot_history(get_stock_or_404(code)))
+    signal = persist_decision_signal(build_decision_signal(stock, source_type="stock-analysis"))
+    return sanitize_display_text(signal)
+
+
+@app.get("/api/decision-signals")
+def decision_signals(code: str | None = None, status: str = "active", limit: int = 20) -> dict[str, Any]:
+    items = decision_signals_snapshot(code=code, status=status, limit=limit)
+    return sanitize_display_text({
+        "count": len(items),
+        "items": items,
     })
 
 

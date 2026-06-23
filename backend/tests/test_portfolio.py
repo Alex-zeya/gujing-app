@@ -1306,6 +1306,33 @@ class PortfolioFlowTest(unittest.TestCase):
         self.assertGreaterEqual(forecast["probability"], 50)
         self.assertTrue(forecast["drivers"])
 
+    def test_analysis_context_pack_exposes_low_sensitive_blocks(self):
+        stock = self.backend.apply_analysis_score(self.backend.get_stock_or_404("000001"))
+
+        context_pack = self.backend.build_analysis_context_pack(stock, source_type="unit-test")
+
+        self.assertEqual(context_pack["version"], self.backend.ANALYSIS_CONTEXT_PACK_VERSION)
+        self.assertEqual(context_pack["subject"]["market"], "A股")
+        self.assertIn("dataQuality", context_pack)
+        block_keys = {block["key"] for block in context_pack["blocks"]}
+        self.assertTrue({"quote", "dailyBars", "technical", "fundamentals", "news"}.issubset(block_keys))
+        self.assertNotIn("token", str(context_pack).lower())
+
+    def test_decision_signal_persists_for_stock_analysis(self):
+        stock = self.backend.apply_analysis_score(self.backend.get_stock_or_404("000001"))
+
+        signal = self.backend.persist_decision_signal(
+            self.backend.build_decision_signal(stock, source_type="unit-test")
+        )
+        snapshot = self.backend.decision_signals_snapshot(code="000001", status="active", limit=5)
+
+        self.assertEqual(signal["modelVersion"], self.backend.DECISION_SIGNAL_MODEL_VERSION)
+        self.assertEqual(signal["market"], "A股")
+        self.assertGreaterEqual(signal["confidence"], 0)
+        self.assertTrue(signal["watchConditions"])
+        self.assertEqual(snapshot[0]["id"], signal["id"])
+        self.assertEqual(snapshot[0]["contextPack"]["version"], self.backend.ANALYSIS_CONTEXT_PACK_VERSION)
+
 
 if __name__ == "__main__":
     unittest.main()
