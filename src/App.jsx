@@ -4643,23 +4643,37 @@ function ProfileView({
         </button>
       </section>
 
-      <section className="panel profile-panel">
-        <div className="section-title">
-          <Bell size={18} />
-          <h2>账户状态</h2>
+      <section className="panel profile-panel profile-data-card">
+        <div className="section-title split">
+          <div>
+            <Bell size={18} />
+            <h2>数据与连接</h2>
+          </div>
+          <span>{apiStatus === 'connected' ? '已连接' : apiStatus === 'offline' ? '离线可看' : '连接中'}</span>
         </div>
-        <div className="profile-status-list">
+        <p className="profile-data-summary">
+          这里显示股镜当前能用的数据能力。数据会尽量实时更新，遇到免费源延迟时会优先显示最近一次可用行情。
+        </p>
+        <div className="profile-data-grid">
           <div>
-            <span>数据连接</span>
-            <strong>{apiStatus === 'connected' ? '已连接' : apiStatus === 'offline' ? '离线缓存' : '连接中'}</strong>
+            <span>行情连接</span>
+            <strong>{apiStatus === 'connected' ? '正常' : apiStatus === 'offline' ? '缓存' : '检查中'}</strong>
+            <em>{dataStatus?.sourceTrust?.label ?? dataStatus?.source ?? '自动选择可用源'}</em>
           </div>
           <div>
-            <span>行情来源</span>
-            <strong>{dataStatus?.sourceTrust?.label ?? dataStatus?.source ?? '同步中'}</strong>
+            <span>名称库</span>
+            <strong>{dataStatus?.stockDirectory?.count ? `${dataStatus.stockDirectory.count} 只` : '已就绪'}</strong>
+            <em>支持代码、企业名称和关键词搜索</em>
           </div>
           <div>
-            <span>未读通知</span>
-            <strong>{stats.unreadAlerts ?? 0}</strong>
+            <span>K线数据</span>
+            <strong>{dataStatus?.coverageSummary?.history?.ratio ? `${dataStatus.coverageSummary.history.ratio}%` : '逐步补全'}</strong>
+            <em>优先保证持仓和观察池股票</em>
+          </div>
+          <div>
+            <span>新闻波动</span>
+            <strong>{stats.unreadAlerts ?? 0} 条提醒</strong>
+            <em>用于发现可能影响波动的消息</em>
           </div>
         </div>
       </section>
@@ -4705,6 +4719,7 @@ function ProfileView({
         <p>
           股镜目前定位为股票研究辅助工具，核心是帮你整理信息、观察风险和记录持仓，不替你做买卖决定。
         </p>
+        <div className="legal-risk-line">研究辅助，不构成投资建议</div>
         <div className="legal-actions">
           <button type="button" onClick={() => openLegalPanel('risk')}>
             风险免责声明
@@ -5135,7 +5150,7 @@ const legalContent = {
         text: '接下来会继续加强行情稳定性、历史数据补全、新闻波动提醒和登录体验，让日常使用更顺。',
       },
       {
-        title: '特别感谢',
+        title: '感谢 Wendy 同学',
         text: '谢谢 Wendy 同学一路试用和提建议，很多界面里不清楚、太复杂的地方，都是在反馈里一步步改出来的。',
       },
     ],

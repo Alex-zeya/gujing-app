@@ -5345,6 +5345,70 @@
   gap: 10px;
 }
 
+.profile-data-card {
+  gap: 12px;
+  border-color: oklch(0.82 0.035 252);
+  background:
+    linear-gradient(180deg, oklch(0.98 0.01 245), var(--surface));
+}
+
+.profile-data-card .section-title {
+  margin-bottom: 0;
+}
+
+.profile-data-card .section-title > span {
+  border-radius: 999px;
+  padding: 6px 9px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.profile-data-summary {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1.5;
+}
+
+.profile-data-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.profile-data-grid div {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 10px;
+  background: oklch(1 0 0 / 0.72);
+}
+
+.profile-data-grid span,
+.profile-data-grid em {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.profile-data-grid strong {
+  display: block;
+  margin: 5px 0 4px;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 950;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .system-check-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -5685,6 +5749,20 @@
   font-size: 13px;
   font-weight: 700;
   line-height: 1.55;
+}
+
+.legal-risk-line {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 32px;
+  border: 1px solid oklch(0.82 0.06 255);
+  border-radius: 999px;
+  padding: 0 12px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .legal-actions {

@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test'
 
 async function login(page) {
-  await page.goto('/?e2e=app')
-  await expect(page.getByText('登录后查看你的持仓和观察池')).toBeVisible()
+  await page.goto('/?e2e=app', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByText('登录后同步你的持仓和观察池')).toBeVisible()
 
   await page.getByLabel('手机号').fill('15995270070')
   await page.getByPlaceholder('6 位验证码').fill('123456')
@@ -42,8 +42,14 @@ test.describe('股镜核心用户流程', () => {
     await expect(page.getByRole('heading', { name: '观察池' })).toBeVisible()
 
     await page.getByRole('button', { name: '我的', exact: true }).click()
-    await expect(page.getByText('运行监控')).toBeVisible()
+    await expect(page.getByText('数据与连接')).toBeVisible()
+    await expect(page.getByText('行情连接')).toBeVisible()
     await expect(page.getByText('安全和说明')).toBeVisible()
+    await expect(page.getByText('研究辅助，不构成投资建议')).toBeVisible()
+    await page.getByRole('button', { name: 'Alex-w有话说' }).click()
+    await expect(page.getByText('感谢 Wendy 同学')).toBeVisible()
+    await page.getByRole('button', { name: '关闭' }).click()
+    await expect(page.getByText('运行监控')).toHaveCount(0)
     const privacyPagePromise = page.context().waitForEvent('page')
     await page.getByRole('link', { name: '隐私政策网页' }).click()
     const privacyPage = await privacyPagePromise

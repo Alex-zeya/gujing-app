@@ -17,13 +17,13 @@ export default defineConfig({
     {
       command: 'APP_ENV=development SMS_PROVIDER=mock npm run backend',
       url: 'http://127.0.0.1:8010/api/health',
-      reuseExistingServer: false,
+      reuseExistingServer: true,
       timeout: 60_000,
     },
     {
       command: 'npm run dev -- --host 127.0.0.1',
       url: 'http://127.0.0.1:5173',
-      reuseExistingServer: false,
+      reuseExistingServer: true,
       timeout: 60_000,
     },
   ],
