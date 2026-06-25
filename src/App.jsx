@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Capacitor, registerPlugin } from '@capacitor/core'
+import gsap from 'gsap'
+import { useGSAP } from '@gsap/react'
 import {
   AlertTriangle,
   BarChart3,
@@ -19,6 +21,8 @@ import {
   UserRound,
 } from 'lucide-react'
 import './App.css'
+
+gsap.registerPlugin(useGSAP)
 
 const GujingAppleSignIn = registerPlugin('GujingAppleSignIn')
 const GujingWechatLogin = registerPlugin('GujingWechatLogin')
@@ -936,6 +940,7 @@ function LogoMark() {
 function App() {
   const [activeTab, setActiveTab] = useState('home')
   const screenRef = useRef(null)
+  const contentRef = useRef(null)
   const [query, setQuery] = useState('600519')
   const [selectedCode, setSelectedCode] = useState('600519')
   const [stockCatalog, setStockCatalog] = useState(stocks)
@@ -1021,6 +1026,59 @@ function App() {
   useEffect(() => {
     screenRef.current?.scrollTo({ top: 0, left: 0, behavior: 'auto' })
   }, [activeTab])
+
+  useGSAP(() => {
+    if (!authSession.authenticated || !contentRef.current) return undefined
+
+    const mm = gsap.matchMedia()
+    mm.add(
+      {
+        reduceMotion: '(prefers-reduced-motion: reduce)',
+      },
+      ({ conditions }) => {
+        const panels = contentRef.current?.querySelectorAll('.view-stack > *') ?? []
+        if (conditions.reduceMotion || panels.length === 0) {
+          gsap.set(panels, { autoAlpha: 1, y: 0, scale: 1, clearProps: 'all' })
+          return undefined
+        }
+
+        gsap.fromTo(
+          panels,
+          { autoAlpha: 0, y: 12, scale: 0.985 },
+          {
+            autoAlpha: 1,
+            y: 0,
+            scale: 1,
+            duration: 0.34,
+            ease: 'power2.out',
+            stagger: { each: 0.035, from: 'start' },
+            clearProps: 'transform,opacity,visibility',
+          },
+        )
+
+        const dataCards = contentRef.current?.querySelectorAll('.profile-data-grid > div') ?? []
+        if (dataCards.length) {
+          gsap.fromTo(
+            dataCards,
+            { autoAlpha: 0, y: 10 },
+            {
+              autoAlpha: 1,
+              y: 0,
+              duration: 0.28,
+              delay: 0.08,
+              ease: 'power2.out',
+              stagger: 0.04,
+              clearProps: 'transform,opacity,visibility',
+            },
+          )
+        }
+
+        return undefined
+      },
+    )
+
+    return () => mm.revert()
+  }, { dependencies: [activeTab, authSession.authenticated], scope: contentRef, revertOnUpdate: true })
 
   function handleScreenTouchStart(event) {
     if (screenRef.current?.scrollTop !== 0 || isRefreshingData) return
@@ -2108,6 +2166,7 @@ function App() {
         </div>
         <div
           className="pull-content"
+          ref={contentRef}
           style={{ transform: `translateY(${isRefreshingData ? 18 : pullDistance}px)` }}
         >
         {activeTab === 'home' && (
