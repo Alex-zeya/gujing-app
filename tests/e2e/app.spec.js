@@ -11,6 +11,53 @@ async function login(page) {
 }
 
 test.describe('股镜核心用户流程', () => {
+  test('官网入口展示产品定位、隐私入口和风险提示', async ({ page }) => {
+    await page.goto('/official?e2e=site', { waitUntil: 'domcontentloaded' })
+
+    await expect(page.getByRole('heading', { name: '股镜' })).toBeVisible()
+    await expect(page.getByText('把股票信息整理成可检查的风险框架')).toBeVisible()
+    await expect(page.getByRole('link', { name: '功能介绍', exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: '使用场景', exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: '后端能力', exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: '投研流程', exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: '联系我们', exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: '查看隐私政策' })).toBeVisible()
+    await expect(page.getByText('不构成证券投资建议')).toBeVisible()
+    await expect(page.getByText('产品亮点')).toBeVisible()
+    await expect(page.getByText('把股票研究从“看一堆数据”变成“按问题检查”。')).toBeVisible()
+    await expect(page.getByText('从一个具体问题开始，不用先学复杂指标。')).toBeVisible()
+    await expect(page.getByText('股镜的重点不是只做漂亮界面，而是把数据整理成可解释的建议。')).toBeVisible()
+
+    await page.getByRole('link', { name: '功能介绍', exact: true }).click()
+    await expect(page).toHaveURL(/\/official\/features/)
+    await page.getByRole('button', { name: '展开股票搜索说明' }).click()
+    await expect(page.getByText('支持企业名称、简称、代码关键词')).toBeVisible()
+    await page.getByRole('button', { name: '展开持仓分析说明' }).click()
+    await expect(page.getByText('把本金、持仓金额、成本价和盈亏放在一起')).toBeVisible()
+
+    await page.getByRole('link', { name: '使用场景', exact: true }).click()
+    await expect(page).toHaveURL(/\/official\/scenarios/)
+    await expect(page.getByText('新手不知道股票代码')).toBeVisible()
+    await expect(page.getByText('已有持仓想看风险')).toBeVisible()
+
+    await page.getByRole('link', { name: '后端能力', exact: true }).click()
+    await expect(page).toHaveURL(/\/official\/backend/)
+    await expect(page.getByText('数据接入层')).toBeVisible()
+    await expect(page.getByText('分析计算层')).toBeVisible()
+    await expect(page.getByText('A 股名称与代码目录')).toBeVisible()
+    await expect(page.getByText('实时行情与缓存')).toBeVisible()
+    await expect(page.getByText('搜索一只股票后，后端会按顺序补齐这些信息')).toBeVisible()
+
+    await page.getByRole('link', { name: '投研流程', exact: true }).click()
+    await expect(page).toHaveURL(/\/official\/research/)
+    await page.getByRole('button', { name: '查看先找股票完整步骤' }).click()
+    await expect(page.getByText('输入股票代码、企业名称或行业关键词')).toBeVisible()
+
+    await page.getByRole('link', { name: '隐私说明', exact: true }).click()
+    await expect(page).toHaveURL(/\/official\/privacy/)
+    await expect(page.getByText('账户、观察池、持仓和提醒规则只用于产品功能')).toBeVisible()
+  })
+
   test('登录后可以搜索、分析、加入持仓并打开说明页', async ({ page }) => {
     const consoleErrors = []
     page.on('console', (message) => {

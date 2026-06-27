@@ -11,6 +11,7 @@
     "dev": "vite",
     "test:e2e": "playwright test",
     "build": "vite build",
+    "build:official": "vite build --base=/official/",
     "build:ios": "vite build --mode ios",
     "lint": "eslint .",
     "preview": "vite preview",

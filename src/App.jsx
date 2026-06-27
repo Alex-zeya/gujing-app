@@ -20,6 +20,7 @@ import {
   Trash2,
   UserRound,
 } from 'lucide-react'
+import OfficialSite from './OfficialSite.jsx'
 import './App.css'
 
 gsap.registerPlugin(useGSAP)
@@ -938,6 +939,14 @@ function LogoMark() {
 }
 
 function App() {
+  if (window.location.pathname.startsWith('/official')) {
+    return <OfficialSite />
+  }
+
+  return <AppShell />
+}
+
+function AppShell() {
   const [activeTab, setActiveTab] = useState('home')
   const screenRef = useRef(null)
   const contentRef = useRef(null)

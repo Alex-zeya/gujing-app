@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 
 DB_PATH = Path(os.getenv("GUJING_DB_PATH", Path(__file__).with_name("gujing.db")))
 PUBLIC_DIR = Path(__file__).resolve().parents[1] / "public"
+OFFICIAL_SITE_DIR = PUBLIC_DIR / "official"
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 USING_POSTGRES = DATABASE_URL.startswith(("postgres://", "postgresql://"))
 APP_STARTED_AT = time.time()
@@ -7028,6 +7029,16 @@ def terms_page() -> FileResponse:
     return public_page_response("terms.html")
 
 
+@app.get("/official", include_in_schema=False)
+def official_site_root() -> FileResponse:
+    return official_site_response("")
+
+
+@app.get("/official/{full_path:path}", include_in_schema=False)
+def official_site_page(full_path: str) -> FileResponse:
+    return official_site_response(full_path)
+
+
 @app.get("/.well-known/apple-app-site-association", include_in_schema=False)
 def apple_app_site_association_well_known() -> dict[str, Any]:
     return apple_app_site_association_payload()
@@ -8000,6 +8011,19 @@ def public_page_response(filename: str) -> FileResponse:
     if not path.exists() or path.parent != PUBLIC_DIR:
         raise HTTPException(status_code=404, detail="page not found")
     return FileResponse(path, media_type="text/html; charset=utf-8")
+
+
+def official_site_response(pathname: str) -> FileResponse:
+    requested = (OFFICIAL_SITE_DIR / pathname).resolve()
+    official_root = OFFICIAL_SITE_DIR.resolve()
+    if official_root not in requested.parents and requested != official_root:
+        raise HTTPException(status_code=404, detail="page not found")
+    if requested.is_file():
+        return FileResponse(requested)
+    index_path = OFFICIAL_SITE_DIR / "index.html"
+    if not index_path.exists():
+        raise HTTPException(status_code=404, detail="official site not built")
+    return FileResponse(index_path, media_type="text/html; charset=utf-8")
 
 
 def privacy_policy_url(service_url: str | None = None) -> str:
